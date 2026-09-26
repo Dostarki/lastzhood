@@ -1,0 +1,12 @@
+.start-screen{position:fixed;inset:0;display:grid;place-items:center;isolation:isolate;background:#839088;overflow:hidden}
+.start-screen:before{content:'';position:absolute;inset:0;z-index:-2;background:var(--start-image) center/cover no-repeat;filter:blur(38px) brightness(.64);transform:scale(1.08)}
+.start-banner{position:absolute;inset:0;z-index:-1;display:grid;place-items:center}
+.start-banner img{display:block;width:auto;max-width:100%;height:100%;object-fit:contain;object-position:center;mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.start-title{position:absolute;top:5%;left:16px;right:16px;text-align:center;color:#f3f0df;text-shadow:0 2px 12px #24342ee6}
+.start-title>span{font:10px 'JetBrains Mono',monospace;letter-spacing:0}
+.start-title h1{font:400 60px/.95 'Bebas Neue',sans-serif;margin-top:5px;letter-spacing:0}
+.intro-start-button{position:absolute;bottom:8%;width:268px!important;height:68px!important;padding:0 30px!important;background:#15251ae8!important;border:1px solid #d3dfbb!important;border-radius:2px!important;box-shadow:0 8px 30px #10201455!important;color:#eff4e5!important;font:500 27px 'Barlow Condensed',sans-serif!important;transition:background-color .2s,border-color .2s,transform .2s!important}
+.intro-start-button:hover{background:#354633!important;border-color:#f0f4df!important;transform:translateY(-2px)}
+.intro-start-button:active{transform:translateY(1px)}.intro-start-button:focus-visible{outline:2px solid #e1eccb;outline-offset:7px}
+@media(max-width:767px){.start-screen:before{background-image:var(--start-image-mobile)}.start-banner img{width:100%;height:auto;max-height:100%;mask-image:linear-gradient(transparent,#000 6%,#000 94%,transparent)}.start-title{top:7%}.start-title h1{font-size:48px}.intro-start-button{width:234px!important;height:60px!important;font-size:25px!important;bottom:6%}}
+@media(max-height:520px){.start-title{top:4%}.start-title h1{font-size:36px}.intro-start-button{height:48px!important;bottom:4%;font-size:22px!important}}

@@ -1,0 +1,141 @@
+{
+  "theme": "dark-tactical-survival",
+  "emotional_archetype": "THE PERFORMANCE PRO / TACTICAL GRIT",
+  "typography": {
+    "title_font": "Barlow Condensed, sans-serif",
+    "display_font": "Bebas Neue, sans-serif",
+    "mono_font": "JetBrains Mono, monospace",
+    "body_font": "Barlow, sans-serif",
+    "hierarchy": {
+      "boss_title": "text-2xl sm:text-3xl font-bold tracking-tight uppercase font-['Barlow_Condensed']",
+      "boss_subtitle": "text-xs sm:text-sm font-medium tracking-widest text-[#a8b898] font-mono",
+      "warning_banner": "text-xl sm:text-2xl font-black tracking-wider text-[#ff3b30] uppercase",
+      "hud_stats": "text-xs font-mono tracking-wider"
+    }
+  },
+  "colors": {
+    "background_base": "#0e1210",
+    "surface_tactical": "#141b16",
+    "surface_glass": "rgba(20, 27, 22, 0.88)",
+    "border_tactical": "rgba(115, 128, 105, 0.35)",
+    "border_highlight": "#eb705a",
+    "text_primary": "#f1f0e8",
+    "text_muted": "#8d9985",
+    "accent_danger": "#d95845",
+    "accent_laser_red": "#ff3838",
+    "accent_venom_purple": "#8b1638",
+    "accent_xenomorph_acid": "#4be3ac",
+    "accent_titan_lava": "#ff6f26",
+    "accent_lime_indicator": "#b1c994"
+  },
+  "bosses": [
+    {
+      "id": "pico_titan",
+      "name": "Pico Gözcü Devi (Pico Blast Guardian)",
+      "hp": 5000,
+      "scale": " devasa dev robotik golem (3.8x standart oyuncu boyu)",
+      "theme_color": "#ff3838",
+      "visual_traits": "Kırmızı parlayan tek göz retikülü, omuz roketi podları, ağır metalik zırh kaplama, enerji lazer tüpü",
+      "skills": ["50m Görüş & Takip", "Lazer Işını", "Güdümlü Roket Salvosu", "Sismik Zıplama & Ezici Alan Hasarı"],
+      "spawn_badge": "BOSS 01 - WESTFALL FABRİKA ALANI"
+    },
+    {
+      "id": "carnage_venom",
+      "name": "Carnage-Venom Simbiyot Dehşeti",
+      "hp": 6000,
+      "scale": " devasa organik amorf kütle (3.5x oyuncu boyu)",
+      "theme_color": "#941634",
+      "visual_traits": "Koyu siyah-kızıl organik lifler, amorf pençeler, çeneli kafa yapısı, kaynayan sıvı parazit zemin havuzu",
+      "skills": ["Sıcak Kor Ağ Fırlatma", "Sıvı Fazına Geçerek Ani Işınlanma (Teleport)", "Yakın Pençe Boğması"],
+      "spawn_badge": "BOSS 02 - DOĞU BATAKLIK DERESİ"
+    },
+    {
+      "id": "xenomorph_prime",
+      "name": "Xenomorph Prime (Alien Hive Mother)",
+      "hp": 10000,
+      "scale": " uzun kuyruklu biyomekanik kabus (4.2x oyuncu uzunluğu)",
+      "theme_color": "#38df9f",
+      "visual_traits": "Uzun pürüzsüz kubbe kafa, biyomekanik omurga, jilet gibi bıçaklı kırbaç kuyruk, asit yeşili salya damlaları",
+      "skills": ["Uzun Mesafeli Duvar/Zemin Sıçraması", "Kırbaç Kuyruk Saplaması", "Asitli Çene Isırığı", "Zehirli Kan Sızıntısı"],
+      "spawn_badge": "BOSS 03 - KUZEY HANGAR HARABELERİ"
+    },
+    {
+      "id": "ash_titan",
+      "name": "Kül Titanı (Ash & Magma Colossus)",
+      "hp": 8000,
+      "scale": " volkanik taş devi (4.5x oyuncu boyu)",
+      "theme_color": "#ff641a",
+      "visual_traits": "Çatlamış magma gövdesi, lav sızan gözler ve omuzlar, duman/kül partikülleri, alev saçan dev yumruklar",
+      "skills": ["Tektonik Şok Dalgası", "Lava Püskürtme ve Zemin Alevi", "Volkanik Çöküş"],
+      "spawn_badge": "BOSS 04 - GÜNEY KRATERİ & MADEN"
+    }
+  ],
+  "start_screen_blueprint": {
+    "goal": "START GAME ekranında oyuna ait orijinal illüstrasyon banner'ını ve arka plan atmosferini korumak, oyunun hayatta kalma ve dev boss atmosferini vurgulamak",
+    "implementation": {
+      "banner_container": "start-game-banner: Arka plan Three.js shader tuvalinin üzerine oturan, yarı saydam taktiksel grid overlay ile harmanlanmış Deadzone devasa Boss görsel banner'ı (1200x520 oranında, köşelerinde 1px reticle ve köşe çizgileri)",
+      "reference_image": "https://customer-assets-cm19k8pv.emergentagent.net/job_community-hood/artifacts/bz8s22r8_image.png",
+      "banner_overlay": "linear-gradient(180deg, rgba(14,18,16,0.3) 0%, rgba(14,18,16,0.85) 85%, #0e1210 100%)",
+      "interactive_start_button": "Korunan mevcut START GAME butonu (.intro-start-button), banner'ın altında belirgin odak noktasında kalır",
+      "test_ids": {
+        "start_screen": "start-screen",
+        "start_banner": "start-game-banner",
+        "start_game_button": "start-game-button"
+      }
+    }
+  },
+  "hud_boss_system_blueprint": {
+    "tactical_radar_markers": {
+      "description": "Mini haritada 4 Boss farklı ikon ve renklerle gösterilir (Pico: Kırmızı Dürbünlü Kare, Carnage: Mor/Kızıl Pençe Noktası, Xenomorph: Yeşil Baklava, Kül Titanı: Turuncu Alev Üçgeni)",
+      "boss_indicator_canvas": "Minimap 2D çiziminde boss koordinatları puls efekti ile yanıp sönen 8px halka ve yön oku ile işaretlenir"
+    },
+    "nearest_boss_health_bar": {
+      "placement": "HUD üst-orta kısımda, pusulanın hemen altında veya 120m yaklaşıldığında devreye giren Boss vitals çubuğu",
+      "elements": [
+        "Boss İsmi ve Sınıfı (Örn: 'PICO GÖZCÜ DEVİ - 5,000 / 5,000 HP')",
+        "Mesafe Rozeti (Örn: '38m - TEHLİKELİ MENZİL')",
+        "Dinamik renkli sağlık barı (Boss'un renk temasına göre gradyan)",
+        "Yetenek Saldırı Uyarısı (Örn: 'DİKKAT: LAZER KİLİTLENMESİ!', 'ŞOK DALGASI GELİYOR!')"
+      ],
+      "test_ids": {
+        "boss_health_container": "hud-boss-tracker",
+        "boss_name_label": "boss-name-label",
+        "boss_health_bar": "boss-health-bar",
+        "boss_distance_badge": "boss-distance-badge",
+        "boss_attack_warning": "boss-attack-warning"
+      }
+    },
+    "tactical_boss_dialog": {
+      "button": "HUD sağ üst buton grubuna radar/kelle avı ikonu eklenir (Crosshair/Skull/Flame ikonu)",
+      "content": "4 Boss'un mevcut durumu (Canlı / Yeniden Doğuş Süresi sayacı: 5-10 dk), harita koordinatları ve yetenek listesini listeleyen taktik brifing paneli",
+      "test_ids": {
+        "hud_boss_dialog_button": "hud-boss-dialog-button",
+        "boss_status_dialog": "boss-status-dialog",
+        "boss_card_pico": "boss-card-pico_titan",
+        "boss_card_carnage": "boss-card-carnage_venom",
+        "boss_card_xenomorph": "boss-card-xenomorph_prime",
+        "boss_card_titan": "boss-card-ash_titan"
+      }
+    }
+  },
+  "layout_and_responsive_rules": {
+    "desktop": {
+      "boss_bar_width": "max-w-[460px] mx-auto top-[76px]",
+      "minimap_boss_pings": "Genişletilmiş 160x160 canvas'ta kenar yön okları",
+      "spacing": "p-4 ile p-6 taktik kartlar"
+    },
+    "mobile": {
+      "boss_bar_width": "calc(100% - 32px) top-[62px]",
+      "touch_safe_area": "D-Pad ve Ateş butonu çakışmayacak şekilde üst bölgede Boss barı",
+      "font_scaling": "H2 ve H3 mobile'da max 20px, etiketler 8px JetBrains Mono"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Do NOT alter original 3D multiplayer survival engine gameplay loop or destroy existing StartScreen button handler.",
+    "Place the static game-branded Boss banner artwork on the StartScreen behind or framing the START GAME button without obscuring the canvas shader or the button clickability.",
+    "Ensure all 4 bosses (Pico Blast robot, Carnage-Venom symbiote, Xenomorph, and Ash Titan) spawn at distinct fixed map locations at match start for testing.",
+    "Implement 5-10 minute respawn timer logic for each boss individually upon defeat.",
+    "Render clear map pings/distance vectors on the minimap and tactical compass for all 4 bosses.",
+    "Ensure every interactive and key informational element contains the specified data-testid attribute."
+  ]
+}
