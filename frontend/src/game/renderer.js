@@ -11,6 +11,7 @@ import { RELOAD_DURATIONS } from './reloadAnimation';
 import { BossScene } from './bossScene';
 import { SnapshotTrack } from './snapshotTrack';
 import { nameLabel } from './nameLabels';
+import { FlashlightSystem } from './flashlights';
 
 export class GameRenderer {
   constructor(container, world, onError) {
@@ -33,6 +34,7 @@ export class GameRenderer {
     this.frustum = new THREE.Frustum(); this.viewMatrix = new THREE.Matrix4(); this.actorBounds = new THREE.Sphere(new THREE.Vector3(), 4);
     this.renderer.shadowMap.type = THREE.PCFShadowMap; this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.16;
     this.renderer.domElement.setAttribute('data-testid', 'game-canvas'); this.renderer.domElement.setAttribute('aria-label', 'Westfall üç boyutlu oyun alanı'); container.appendChild(this.renderer.domElement);
+    this.flashlights = new FlashlightSystem(this.scene, this.renderer.domElement);
     this.sky = new THREE.HemisphereLight('#e4ead6', '#4c5544', 2.05); this.scene.add(this.sky);
     this.sun = new THREE.DirectionalLight('#ffe4b5', 3.1); this.sun.position.set(-38, 70, 34); this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024); Object.assign(this.sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 180 });
@@ -80,6 +82,7 @@ export class GameRenderer {
   setMode(mode, weapon, skin = this.skin || 'soldier') {
     this.mode = mode; this.keys = {}; this.mouseDown = false;
     this.timeOfDay = null;
+    this.flashlights.clear();
     this.pendingState = null; this.pendingEvents = []; this.lastReceivedAt = null;
     this.metricStart = performance.now(); this.metricFrames = 0; this.qualitySince = performance.now();
     this.movement.intent = null; this.movement.intentSeq = 0;
@@ -278,6 +281,7 @@ export class GameRenderer {
       this.updateChunks(0, 0);
     }
     this.camera.position.copy(this.focus).add(this.offset); this.camera.lookAt(this.focus);
+    this.flashlights.update(this.mode === 'playing' && this.timeOfDay === 'night', this.player, this.state?.me, this.entities, now, (x,z,dx,dz,range) => this.movement.rayDistance(x,z,dx,dz,range));
     this.sun.position.copy(this.focus).add(new THREE.Vector3(-38, 70, 34)); this.sun.target.position.copy(this.focus);
     if (now-this.shadowTime > 120) { this.sun.shadow.needsUpdate = true; this.shadowTime = now; }
     this.ring.position.x = this.player.position.x; this.ring.position.z = this.player.position.z; this.ring.visible = this.player.visible;
@@ -293,7 +297,7 @@ export class GameRenderer {
     this.frame = requestAnimationFrame(() => this.animate());
   }
   dispose() {
-    audio.stopAutomatic();audio.stopEnemies();this.fx.clear();this.fx.streams.dispose();this.swarmFx.dispose();this.bossScene.dispose();
+    audio.stopAutomatic();audio.stopEnemies();this.fx.clear();this.fx.streams.dispose();this.swarmFx.dispose();this.bossScene.dispose();this.flashlights.dispose();
     this.disposed = true; cancelAnimationFrame(this.frame); this.observer.disconnect();
     window.removeEventListener('keydown', this.down); window.removeEventListener('keyup', this.up); window.removeEventListener('pointermove', this.mouse); window.removeEventListener('pointerdown', this.fire); window.removeEventListener('pointerup', this.release); window.removeEventListener('blur', this.blur);
     this.renderer.domElement.removeEventListener('wheel', this.wheel);
