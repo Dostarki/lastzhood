@@ -50,6 +50,7 @@ async def lifespan(app):
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await task
+    await asyncio.gather(*(p['channel'].stop() for p in list(game.players.values())))
     await asyncio.gather(*(save_score(p) for p in list(game.players.values())))
     client.close()
 
@@ -82,7 +83,9 @@ async def root():
 
 @app.get('/api/status')
 async def status():
-    return {'online': len(game.players), 'capacity': 200, 'friendly_fire': True, 'map': 'Westfall', 'size': 1600, 'tick_rate': 20}
+    return {'online': len(game.players), 'capacity': 200, 'friendly_fire': True, 'map': 'Westfall', 'size': 1600, 'tick_rate': 20,
+            'tick_ms': round(game.tick_ms, 2), 'tick_overruns': game.tick_overruns,
+            'coalesced_states': sum(p['channel'].coalesced for p in game.players.values())}
 
 
 @app.get('/api/bosses')
@@ -132,6 +135,7 @@ async def websocket(ws: WebSocket, token: str):
     player = game.add_player(session, ws)
     try:
         await ws.send_json({'type': 'welcome', 'id': player['id']})
+        player['channel'].start()
         while True:
             data = await ws.receive_json()
             if not isinstance(data, dict):
@@ -147,4 +151,5 @@ async def websocket(ws: WebSocket, token: str):
         pass
     finally:
         game.players.pop(player['id'], None)
+        await player['channel'].stop()
         await save_score(player)

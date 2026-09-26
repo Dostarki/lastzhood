@@ -1,39 +1,76 @@
-/* Network/input cadence runs independently of GPU work on the UI thread. */
-let socket, pulse, heartbeat, publish, controls = { type: 'input', x: 0, z: 0, angle: 0, fire: false };
-let latest, events = [], lastInput = 0;
-const stop = () => { clearInterval(pulse); clearInterval(heartbeat); clearInterval(publish); };
+/* Socket timing stays off the render thread. At most one state waits on the UI. */
+let socket, pulse, heartbeat, latest, inFlight = false, events = [];
+let controls = { type: 'input', x: 0, z: 0, angle: 0, fire: false };
+let lastInput = 0, lastSent = 0, lastState = 0, interval = 50, rtt = null, jitter = 0;
+let pendingPress = false;
+const pings = new Map();
+const stop = () => { clearInterval(pulse); clearInterval(heartbeat); pings.clear(); };
+const timestamp = () => performance.timeOrigin + performance.now();
+
+function sendInput() {
+  if (socket?.readyState !== 1 || socket.bufferedAmount > 8192) return;
+  socket.send(JSON.stringify({ ...controls, fire_pressed: pendingPress }));
+  controls.reload = false; pendingPress = false; lastSent = performance.now();
+}
+function publish() {
+  if (!latest || inFlight) return;
+  self.postMessage({ ...latest, events });
+  latest = null; events = []; inFlight = true;
+}
+function ping() {
+  if (socket?.readyState !== 1 || socket.bufferedAmount > 8192) return;
+  const now = performance.now();
+  for (const [key, value] of pings) if (now - value > 10000) pings.delete(key);
+  pings.set(now, now);
+  socket.send(JSON.stringify({ type: 'ping', time: now }));
+}
 
 self.onmessage = ({ data }) => {
   if (data.type === 'connect') {
+    stop(); latest = null; events = []; inFlight = false;
     socket = new WebSocket(data.url);
     socket.onopen = () => {
       self.postMessage({ type: 'open' });
       pulse = setInterval(() => {
-        if (socket.readyState !== 1) return;
-        if (Date.now()-lastInput > 2500) controls = { ...controls, x: 0, z: 0, fire: false, reload: false };
-        socket.send(JSON.stringify(controls)); controls.reload = false;
-      }, 50);
-      const ping = () => { if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'ping', time: Date.now() })); };
-      ping(); heartbeat = setInterval(ping, 2000);
-      publish = setInterval(() => {
-        if (latest) { self.postMessage({ type: 'state', ...latest, events }); latest = null; events = []; }
-      }, 100);
+        if (performance.now() - lastInput > 400) {
+          controls = { ...controls, x: 0, z: 0, fire: false, reload: false, sprint: false };
+          pendingPress = false;
+        }
+        if (performance.now() - lastSent >= 45) sendInput();
+      }, 25);
+      ping(); heartbeat = setInterval(ping, 1000);
     };
     socket.onmessage = e => {
-      const m = JSON.parse(e.data);
-      if (m.type === 'state') { latest = m; events.push(...m.events); if (events.length > 100) events = events.slice(-100); }
-      else if (m.type === 'pong') self.postMessage({ type: 'ping', value: Date.now()-m.time });
-      else self.postMessage(m);
+      let m;
+      try { m = JSON.parse(e.data); } catch { return; }
+      const now = performance.now();
+      if (m.type === 'state') {
+        if (lastState) interval += (Math.min(1000, now - lastState) - interval) * .15;
+        lastState = now;
+        latest = { ...m, network: { rtt, jitter, interval, received_at: timestamp() } };
+        events.push(...(m.events || []));
+        if (events.length > 256) events.splice(0, events.length - 256);
+        publish();
+      } else if (m.type === 'pong' && pings.has(m.time)) {
+        const value = now - pings.get(m.time); pings.delete(m.time);
+        if (rtt !== null) jitter += (Math.abs(value - rtt) - jitter) * .25;
+        rtt = value;
+        self.postMessage({ type: 'ping', value: Math.round(value), jitter: Math.round(jitter) });
+      } else if (m.type !== 'pong') self.postMessage(m);
     };
     socket.onclose = () => { stop(); self.postMessage({ type: 'close' }); };
     socket.onerror = () => self.postMessage({ type: 'error' });
+  } else if (data.type === 'state-consumed') {
+    inFlight = false; publish();
   } else if (data.type === 'input') {
-    const press=data.fire&&!controls.fire;
-    controls = { ...data, reload: data.reload || controls.reload || false }; lastInput = Date.now();
-    if(press&&socket?.readyState===1)socket.send(JSON.stringify({...controls,fire_pressed:true}));
+    const edge = ['x', 'z', 'fire', 'sprint'].some(key => data[key] !== controls[key]) || data.reload;
+    pendingPress ||= !!data.fire && !controls.fire;
+    controls = { ...data, reload: !!data.reload || controls.reload };
+    lastInput = performance.now();
+    if (edge || lastInput - lastSent >= 50) sendInput();
   } else if (data.type === 'respawn') {
     if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'respawn' }));
   } else if (data.type === 'disconnect') {
-    stop(); socket?.close();
+    stop(); socket?.close(); latest = null; events = [];
   }
 };

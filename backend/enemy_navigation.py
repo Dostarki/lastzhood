@@ -23,14 +23,14 @@ def path_to(enemy, target):
     width, height = abs(tx-sx)+21, abs(tz-sz)+21
     matrix = [[walkable(x0+x, z0+z) for x in range(width)] for z in range(height)]
     # A distant sub-goal may land inside a house: choose a reachable nearby open cell.
-    goals = sorted(((x, z) for z in range(height) for x in range(width) if matrix[z][x]), key=lambda p: (p[0]+x0-tx)**2+(p[1]+z0-tz)**2)
-    if not goals:
+    goal = min(((x, z) for z in range(height) for x in range(width) if matrix[z][x]), key=lambda p: (p[0]+x0-tx)**2+(p[1]+z0-tz)**2, default=None)
+    if goal is None:
         return []
     matrix[sz-z0][sx-x0] = 1
     grid = Grid(matrix=matrix)
     finder = AStarFinder(diagonal_movement=DiagonalMovement.only_when_no_obstacle, max_runs=1600, time_limit=.008)
     try:
-        path, _ = finder.find_path(grid.node(sx-x0, sz-z0), grid.node(*goals[0]), grid)
+        path, _ = finder.find_path(grid.node(sx-x0, sz-z0), grid.node(*goal), grid)
     except (ExecutionRunsException, ExecutionTimeException):
         return []
     return [(node.x*CELL+x0*CELL, node.y*CELL+z0*CELL) for node in path[1:]]

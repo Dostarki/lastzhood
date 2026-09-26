@@ -1,6 +1,8 @@
 # DEADZONE — Ürün ve geliştirme kaydı
 
 ## Orijinal problem statement
+Bu çalışma dalının başlangıç isteği: "https://github.com/Dostarki/dayhoodz bu repoyu çek ve çalıştır". Repo alınmış ve çalıştırılmıştır; aşağıdaki önceki ürün gereksinimleri repoyla taşınmıştır.
+
 Bir zombi project oyunu istiyorum. Webde çalışacak grafikleri ise görselde attığım gibi olacak ve online bir oyun olacak. Harita ise büyük bir alan olacak etrafta ağaç ev gibi rastgele renderlensin oynayış tarzı ise GTA gibi olacak. W A S D ve mouse ile oynanabilecek olacak. Harita büyüklüğü ise 200 oyuncuyu rahat şekilde sığacak bir alan olacak. Kamera ise oyuncuyu takip edecek ve sadece gittiği alanı görebilecek. Oyuna başlamak için ise Start game olacak ve silahını seçecek. Silahlar ise AK47,Ak117,AK107,Otomatik fişek atan tüfek ve bu tüfekler kaliteli görünsün oyuncunun elinde net belli olsun. Frendly fire açık olacak etrafta rastgele zombiler olacak öldürdükçe puan gelecek.
 
 ## Kullanıcının açık seçimleri
@@ -104,3 +106,37 @@ Bir zombi project oyunu istiyorum. Webde çalışacak grafikleri ise görselde a
 - P1: Kullanıcı geri bildirimine göre hız, alev hasarı, sürü sayısı ve ses seviyesi dengesi.
 - P2: Daha ayrıntılı lisanslı insan/yaratık modelleri ve animasyonlar; çevresel ses/yankı.
 - Olası sonraki iyileştirme: Kanamayı durduran sınırlı bandaj ve zehre karşı panzehir; henüz istenmedi/eklenmedi.
+
+## Güncel çalışma — 2026-09-26: Çevrim içi gecikme ve takılma
+### Kullanıcı isteği ve kapsam
+- "Oyun içi bende MS çok yüksek görünüyor ve takılma kasma yaratıyor. Online için iyileştirmeler istiyorum."
+- Onay/ölçüm: "Evet kabul ediyorum 300msden aşağı düşmüyor benim".
+- P0 kapsamı: oyun döngüsünü yavaş bağlantılardan ayırma, istemci beklemelerini azaltma, yüksek gecikmede hareket yumuşatma; P1 kısa çok oyunculu doğrulama. Kullanıcı tarafında son doğrulama BEKLENİYOR.
+
+### Bulgular ve uygulananlar
+- Önceki `Game.run`, tüm oyuncuların WebSocket gönderimini `await gather` ile bekliyordu. Tek yavaş gönderim bütün simülasyonu geciktirebiliyordu. İstemci worker'ı ayrıca state verisini sabit 100 ms aralıklarla yayınlıyordu.
+- Yeni `/backend/network.py`: her bağlantıya tek yazıcı görevi; en fazla bir bekleyen güncel state, 256 olay ve 8 kontrol mesajı. Eski state yerine yenisi gönderilir, olaylar sınır dahilinde sıralı birleştirilir. Pong bir sonraki state'den önceliklidir; tek bağlantının 500 ms gönderim zaman aşımı dünyayı bekletmez. Normal WebSocket kapanışı dahil görev/kuyruk temizliği eklendi.
+- Sunucu 20 Hz döngüsünde ortak boss/sıralama verisini oyuncu başına tekrar hesaplamaz. State mesajında `seq`, `server_time`, `tick_ms`; oyuncuda simülasyonun işlediği `input_seq` onayı bulunur. `/api/status` artık tur işlem süresi, 50 ms aşım sayısı ve birleştirilen state sayısı da verir. Bunlar gerçek ölçümler; tick_ms uçtan uca ağ gecikmesi değildir.
+- Worker sabit 100 ms yayın beklemesi olmadan iletir; ana ekrandan `state-consumed` gelene kadar en güncel state'i tutar, eski ekran mesajları birikmez. RTT monoton saatle 1 Hz ölçülür. Hareket başlama/durma, koşu, ateş ve reload değişimi anında; normal girdi yaklaşık 20 Hz. 8 KB giden buffer sınırı ve ana ekrandan 400 ms girdi gelmediğinde güvenli durdurma vardır.
+- HUD güncellemesi yaklaşık 10 Hz, çizim motoruna state teslimi bağımsızdır. Yerel hareket tahmini RTT/2 ve snapshot yaşını hesaba katar; yeni yön/dur komutu sunucuda işlenmeden eski konuma çekilmez (650 ms üst sınır). Bu tam rollback/replay veya hitscan lag compensation değildir; hasar/cephane/puan sunucuda kalır.
+- `/frontend/src/game/snapshotTrack.js`: uzak oyuncu/zombi için zaman damgalı ara konumlar, açı sarım düzeltmesi, 6 örnek sınırı, ışınlanmada sıfırlama; tahmini ileri hareket en çok 80 ms. Ağ dalgalanmasına göre 60–150 ms tampon.
+- Otomatik grafik ayarı artık sürekli 32 ms üstü karelerde kademeli gölge/piksel yoğunluğu azaltır; ekran dışı karakter animasyonları atlanır. Harita geçişinde yeni görsel parça oluşturma kare başına bire dağıtılır; fizik engelleri önceden yüklenir.
+- `/components/ConnectionStats.jsx/.css`: gerçek MS, FPS, RTT dalgalanması, sunucu işlem süresi ve eski veri uyarısı. Mobil font/kontrast iyileştirildi. Göstergeler gecikmeyi düşük göstermek için değiştirilmedi.
+- Yol aramasında tüm uygun hedefleri sıralamak yerine tek en yakın hedef bulunur; yaratık dengesi değiştirilmedi. Repoda var olan boss oyun sistemi korundu, bu çalışmada boss eklenmedi.
+- Yeni servis/API anahtarı/hesap yok. MOCKED ürün API/akışı yok; kontrollü testlerde sahte ağ soketleri kullanılır. Misafir erişim bilgileri `/memory/test_credentials.md` içinde.
+
+### Doğrulama ve ölçüm sınırları
+- `yarn build`, Python derleme ve public API kontrolü başarılı. `/test_reports/network-build.log`.
+- `/test_reports/iteration_4.json`: 6/6 pytest, kontrollü worker/SnapshotTrack/MovementController testleri ve masaüstü/mobil kısa gameplay smoke geçti. İki gerçek oyuncuda karşılıklı görünürlük, hareket/durma, cephane/ateş, reload, ping, state sırası/onayı ve boss payload korundu. Ölüm/respawn sözleşmesi birim testte doğrulandı.
+- 350 ms geciken sahte WebSocket dünya döngüsünü durdurmadı; gönderim zaman aşımı, kuyruk sınırları, olay sırası, pong önceliği doğrulandı. 300 ms RTT için worker zaman ölçümü ve yerel hareket onay beklemesi kontrollü testten geçti. Bu kullanıcının gerçek internet rotasını taklit eden kapsamlı bir ağ testi değildir.
+- 6 oyuncu / 5 saniyelik kısa, çoğunlukla bekleyen istemci örneği: sunucu zamanına göre yaklaşık 19.72 Hz, RTT medyanı 44.88 ms, ortalama tur işlemi 2.381 ms. Raporun p95 diye yazdığı 87.93 ms yalnız az sayıdaki örneğin maksimumudur; güvenilir p95 değildir. Örnek scriptleri artık 20 ölçümden azsa p95 vermez, maksimum ve örnek sayısını ayrıca gösterir.
+- Test raporundan sonra log kontrolü normal kapanışta `websockets.ConnectionClosedOK` hatasını buldu; yakalama ve özel regresyon eklendi. Son tekrar 6/6 geçti; yeni sunucu hata kaydı YOK. `/test_reports/network-retest.xml`, `/test_reports/network-retest-server.log`.
+- 1920×800 ve 390×844 canlı canvas dolu, arayüz taşması yok. Son mobil font 10 px; bağlantı altı 86.5 px / skor üstü 90 px, çakışma yok. Yazı okunabilirliği notu giderildi.
+- Yazılımsal WebGL test tarayıcısında düşük FPS devam edebiliyor (son örneklerde yaklaşık 2–10 FPS). Bu kullanıcı donanımı için FPS garantisi veya kontrollü önce/sonra performans karşılaştırması değildir. Grafik iyileştirmesinin kullanıcı cihazındaki etkisi henüz doğrulanmadı.
+- Kullanıcının sürekli 300 ms üzeri RTT'si test rotasında tekrar üretilemedi. Ağ mesafesi, rota, cihaz ve uygulama yükünün kullanıcının sorunundaki payları kesin ayrıştırılmadı; 300 ms altına düşme garantisi verilmedi. 200 aktif oyuncu/kalabalık combat yük testi yapılmadı.
+
+### Şu anki öncelikler (önceki sonraki iş listesinin güncel hali)
+- P0: Kullanıcı oyuna yeniden katılıp yeni MS + FPS + SV değerlerini, takılma sürüyorsa ekran görüntüsünü paylaşmalı. Test edilen akışlarda bilinen engelleyici hata yok; kullanıcı ağında çözüm onayı bekleniyor.
+- P1: Gerçek kullanıcı rotasında daha uzun RTT/jitter ve cihaz FPS ölçümü; 200 aktif oyuncu ve kalabalık düşman/çatışma yükü, olası mekânsal indeksleme. Kapasite/FPS/RTT garantisi verme.
+- P1: İhtiyaç halinde tam input replay / lag compensation; mevcut sürüm sınırlı tahmin ve yumuşatma uygular.
+- P2: İsteğe bağlı son 30 saniye bağlantı/FPS grafiği ve kopyalanabilir teşhis özeti; model/ses ve denge backlog'u korunur.

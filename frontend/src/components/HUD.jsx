@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { WEAPONS } from './Lobby';
 import { StatusEffects } from './StatusEffects';
 import { drawBossMarkers } from '../game/bossMinimap';
+import { ConnectionStats } from './ConnectionStats';
 
 const Minimap = ({ state, engine }) => {
   const ref = useRef(null);
@@ -29,7 +30,7 @@ export const HUD = ({ state, ping, engine, onSettings, onLeaderboard, onRespawn,
   if (!me) return <div className="connecting-hud" data-testid="connecting-hud">BÖLGEYE GİRİLİYOR…</div>;
   return <div className="hud" data-testid="game-hud">
     <StatusEffects statuses={me.statuses} alive={me.hp > 0} />
-    <div className="hud-top-left"><div className="hud-wordmark" data-testid="hud-brand">DEADZONE<span>LIVE</span></div><div className="hud-connection" data-testid="hud-connection"><i className="status-dot" /><span>{state.online} / 200</span><span>{ping} ms</span></div></div>
+    <div className="hud-top-left"><div className="hud-wordmark" data-testid="hud-brand">DEADZONE<span>LIVE</span></div><ConnectionStats state={state} ping={ping} engine={engine} /></div>
     <div className="hud-compass" data-testid="hud-compass"><span>B</span><i /><span>KB</span><i /><strong>K</strong><i /><span>KD</span><i /><span>D</span><div className="compass-pointer">▼</div></div>
     <div className="hud-buttons"><button data-testid="hud-boss-map-button" title="Boss haritası" aria-label="Boss haritası" onClick={onBossMap}><Map size={19}/></button><button data-testid="hud-leaderboard-button" title="Sıralama" aria-label="Sıralama" onClick={onLeaderboard}><Trophy size={19} /></button><button data-testid="hud-sound-button" title="Ses" aria-label="Ses aç/kapat" onClick={toggleMuted}>{muted ? <VolumeX size={19} /> : <Volume2 size={19} />}</button><button data-testid="hud-settings-button" title="Ayarlar" aria-label="Ayarlar" onClick={onSettings}><Settings2 size={19} /></button></div>
     <div className="kill-feed" data-testid="kill-feed">{feed.map(e => <div key={e.key} data-testid={`kill-feed-${e.key}`}><span>{e.name}</span><Crosshair size={12} /><span className={e.zombie ? '' : 'pvp-name'}>{e.target}</span></div>)}</div>

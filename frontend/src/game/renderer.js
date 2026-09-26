@@ -9,6 +9,7 @@ import { createEnemy, animateEnemy } from './enemyModels';
 import { SwarmEffects } from './swarmEffects';
 import { RELOAD_DURATIONS } from './reloadAnimation';
 import { BossScene } from './bossScene';
+import { SnapshotTrack } from './snapshotTrack';
 
 export class GameRenderer {
   constructor(container, world, onError) {
@@ -26,6 +27,9 @@ export class GameRenderer {
     try { this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' }); } catch (e) { onError('Bu tarayıcıda 3D grafikler başlatılamadı. Donanım hızlandırmayı etkinleştir.'); throw e; }
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25)); this.renderer.shadowMap.enabled = true;
     this.autoQuality = true; this.slowFrames = 0; this.pendingEvents = [];
+    this.metrics = { fps: 0, frameMs: 0 }; this.metricStart = performance.now(); this.metricFrames = 0;
+    this.qualityLevel = 0; this.qualitySince = performance.now(); this.frameAverage = 16;
+    this.frustum = new THREE.Frustum(); this.viewMatrix = new THREE.Matrix4(); this.actorBounds = new THREE.Sphere(new THREE.Vector3(), 4);
     this.renderer.shadowMap.type = THREE.PCFShadowMap; this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.16;
     this.renderer.domElement.setAttribute('data-testid', 'game-canvas'); this.renderer.domElement.setAttribute('aria-label', 'Westfall üç boyutlu oyun alanı'); container.appendChild(this.renderer.domElement);
     this.scene.add(new THREE.HemisphereLight('#e4ead6', '#4c5544', 2.05));
@@ -74,6 +78,9 @@ export class GameRenderer {
   }
   setMode(mode, weapon, skin = this.skin || 'soldier') {
     this.mode = mode; this.keys = {}; this.mouseDown = false;
+    this.pendingState = null; this.pendingEvents = []; this.lastReceivedAt = null;
+    this.metricStart = performance.now(); this.metricFrames = 0; this.qualitySince = performance.now();
+    this.movement.intent = null; this.movement.intentSeq = 0;
     this.movement.initialized=false;this.localPending=[];this.nextShot=0;this.localReloadUntil=0;audio.stopAutomatic();audio.stopEnemies();this.fx.clear();this.swarmFx.clear();this.bossScene.clear();
     this.demoZombies.forEach(z => { z.visible = mode === 'lobby'; });
     if (weapon !== this.weapon || skin !== this.skin) { disposeHuman(this.player); this.player = createHuman(false, 0, weapon, skin); this.scene.add(this.player); this.weapon = weapon; this.skin = skin; }
@@ -108,7 +115,8 @@ export class GameRenderer {
   }
   receive(state) {
     this.pendingState = state;
-    this.pendingEvents.push(...state.events); if (this.pendingEvents.length > 80) this.pendingEvents.splice(0, this.pendingEvents.length-80);
+    this.lastReceivedAt = state.network?.received_at || performance.timeOrigin + performance.now();
+    this.pendingEvents.push(...state.events); if (this.pendingEvents.length > 256) this.pendingEvents.splice(0, this.pendingEvents.length-256);
   }
   syncState(state) {
     const previous=this.state?.me;
@@ -120,13 +128,15 @@ export class GameRenderer {
     this.localAmmo=Math.max(0,state.me.ammo-this.localPending.length);
     if(state.me.reloading>0||state.me.hp<=0||!state.me.ammo)audio.stopAutomatic();
     this.state = state;
-    this.lastSnapshotAt=performance.now();this.fx.sync(state);this.swarmFx.sync(state);this.bossScene.sync(state);
+    this.lastSnapshotAt=(state.network?.received_at || performance.timeOrigin+performance.now())-performance.timeOrigin;this.fx.sync(state);this.swarmFx.sync(state);this.bossScene.sync(state);
     const wanted = new Set();
     [...state.zombies.map(e => ({ ...e, zombie: true })), ...state.players].forEach(e => {
       wanted.add(e.id); let g = this.entities.get(e.id);
       if (g && !e.zombie && (g.userData.skin !== (e.skin || 'soldier') || g.userData.weaponType !== e.weapon)) { disposeHuman(g); g = null; }
       if (!g) { g = e.zombie ? createEnemy(e.enemy_type, e.variant || 0) : createHuman(false, 0, e.weapon, e.skin); g.position.set(e.x, 0, e.z); this.scene.add(g); this.entities.set(e.id, g); }
       g.userData.target = e; g.visible = e.hp > 0;
+      g.userData.track ||= new SnapshotTrack();
+      g.userData.track.push(e, state.server_time || this.lastSnapshotAt);
     });
     this.entities.forEach((g, id) => { if (!wanted.has(id)) { disposeHuman(g); this.entities.delete(id); } });
     this.pendingEvents.forEach(event => { if (event.type === 'shot'&&event.owner!==state.me.id) { this.fx.shot(event); const actor = this.entities.get(event.owner); if (actor) triggerHumanShot(actor); } else if (event.type === 'kill') this.corpse(event); else if(event.type==='explosion')this.fx.explosion(event); else if(event.type==='enemy_attack' && this.entities.get(event.owner)?.visible) this.fx.shot(event); });
@@ -158,7 +168,27 @@ export class GameRenderer {
     this.nearby=nearby;this.movement.load(nearby);
     const wanted = new Set(nearby.map(c => c.id));
     this.chunks.forEach((g, id) => { if (!wanted.has(id)) { this.scene.remove(g); g.traverse(o => o.geometry?.dispose()); this.chunks.delete(id); } });
-    nearby.forEach(c => { if (!this.chunks.has(c.id)) { const group = makeChunk(c); this.chunks.set(c.id, group); this.scene.add(group); } });
+    this.chunkQueue = nearby.filter(c => !this.chunks.has(c.id)).sort((a,b) => Math.hypot(a.x+40-x,a.z+40-z)-Math.hypot(b.x+40-x,b.z+40-z));
+    if (this.mode !== 'playing') while (this.chunkQueue.length) this.loadNextChunk();
+  }
+  loadNextChunk() {
+    const chunk = this.chunkQueue?.shift(); if (!chunk) return;
+    const group = makeChunk(chunk); this.chunks.set(chunk.id, group); this.scene.add(group);
+  }
+  updatePerformance(now, elapsed) {
+    this.metricFrames++;
+    if (now - this.metricStart >= 500) {
+      this.metrics = { fps: Math.round(this.metricFrames * 1000 / (now - this.metricStart)), frameMs: Math.round((now - this.metricStart) / this.metricFrames) };
+      this.metricStart = now; this.metricFrames = 0;
+      this.renderer.domElement.dataset.fps = this.metrics.fps;
+    }
+    this.frameAverage += (Math.min(elapsed, 250) - this.frameAverage) * .08;
+    if (this.autoQuality && this.mode === 'playing' && now - this.qualitySince > 2500 && this.frameAverage > 32 && this.qualityLevel < 2) {
+      this.qualityLevel++;
+      this.renderer.shadowMap.enabled = false;
+      this.renderer.setPixelRatio(this.qualityLevel === 1 ? .85 : .65);
+      this.qualitySince = now; this.resize();
+    }
   }
   animate() {
     if (this.disposed) return;
@@ -166,16 +196,15 @@ export class GameRenderer {
     if(this.mode!=='playing'&&now-this.lastFrame<160){this.frame=requestAnimationFrame(()=>this.animate());return;}
     const elapsed = now-this.lastFrame; const dt = Math.min(elapsed/1000, .1); this.lastFrame = now; this.elapsed += dt; const t = this.elapsed;
     if (this.pendingState) { this.syncState(this.pendingState); this.pendingState = null; }
-    if (this.autoQuality && this.mode==='playing' && elapsed > 110) this.slowFrames++; else this.slowFrames = Math.max(0, this.slowFrames-1);
-    if (this.autoQuality && this.slowFrames >= 3) {
-      this.renderer.shadowMap.enabled = false; this.renderer.setPixelRatio(.65); this.resize(); this.autoQuality = false;
-    }
+    this.updatePerformance(now, elapsed);
     if (this.mode === 'playing' && Math.abs(this.zoom-this.targetZoom) > .005) {
       this.zoom = THREE.MathUtils.lerp(this.zoom, this.targetZoom, 1-Math.exp(-dt*12)); this.updateProjection();
     }
     if (this.mode === 'playing' && this.state) {
       const me = this.state.me,input=this.getInput(false);
-      const predicted=this.movement.update(dt,input,me,(now-this.lastSnapshotAt)/1000);
+      const snapshotAge=(now-this.lastSnapshotAt)/1000;
+      const activeInput=snapshotAge>1?{...input,x:0,z:0,fire:false}:input;
+      const predicted=this.movement.update(dt,activeInput,me,snapshotAge,this.state.network?.rtt || 0);
       this.player.position.set(predicted.x,0,predicted.z);
       const moving=predicted.speed>.15;
       this.ray.setFromCamera(this.pointer, this.camera); this.ray.ray.intersectPlane(this.plane, this.aimPoint);
@@ -184,7 +213,7 @@ export class GameRenderer {
         const target = touchTargets.reduce((a, b) => Math.hypot(a.x-me.x, a.z-me.z) < Math.hypot(b.x-me.x, b.z-me.z) ? a : b);
         this.angle = Math.atan2(target.x-me.x, target.z-me.z);
       } else this.angle = Math.atan2(this.aimPoint.x-this.player.position.x, this.aimPoint.z-this.player.position.z);
-      if(input.fire)this.tryLocalFire(now);else audio.stopAutomatic();
+      if(activeInput.fire)this.tryLocalFire(now);else audio.stopAutomatic();
       const firing = !this.blocked && me.hp > 0 && !me.reloading && now >= this.localReloadUntil && (now < this.nextShot || (input.fire && this.localAmmo > 0));
       if (!firing && (this.blocked || me.hp <= 0 || me.reloading)) { this.player.userData.shotHold = 0; this.player.userData.flashTime = 0; }
       const reloadRemaining=me.hp>0 ? (me.reloading || Math.max(0,(this.localReloadUntil-now)/1000)) : 0;
@@ -208,9 +237,15 @@ export class GameRenderer {
       this.renderer.domElement.dataset.remotePlayers = JSON.stringify([...this.entities.values()].filter(g => !g.userData.zombie).map(g => ({ id: g.userData.target.id, skin: g.userData.skin, pose: g.userData.pose })));
       this.renderer.domElement.dataset.predictedX=predicted.x.toFixed(2);this.renderer.domElement.dataset.predictedZ=predicted.z.toFixed(2);this.renderer.domElement.dataset.running=predicted.running;
       let inside='';this.chunks.forEach(chunk=>{(chunk.userData.buildings||[]).forEach(b=>{const h=b.userData.building,interior=Math.abs(predicted.x-h.x)<h.w/2-.25&&Math.abs(predicted.z-h.z)<h.d/2-.25;b.userData.cover.visible=!interior;if(interior)inside=h.name;});});this.renderer.domElement.dataset.interior=inside;
+      const renderTime=(this.state.server_time || this.lastSnapshotAt)+Math.max(0,now-this.lastSnapshotAt)-Math.min(150,Math.max(60,(this.state.network?.interval||50)*1.3+(this.state.network?.jitter||0)*.25));
+      this.viewMatrix.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse); this.frustum.setFromProjectionMatrix(this.viewMatrix);
       this.entities.forEach(g => {
-        const e = g.userData.target; if (!e) return; const next = new THREE.Vector3(e.x, 0, e.z); const move = g.position.distanceTo(next) > .02;
-        g.position.lerp(next,1-Math.exp(-dt*14));const diff=Math.atan2(Math.sin(e.angle-g.rotation.y),Math.cos(e.angle-g.rotation.y));g.rotation.y+=diff*(1-Math.exp(-dt*18));
+        const e = g.userData.target; if (!e) return;
+        const next = g.userData.track.sample(renderTime) || e;
+        const move = Math.hypot(g.position.x-next.x,g.position.z-next.z) > .01;
+        g.position.x=next.x;g.position.z=next.z;g.rotation.y=next.angle;
+        this.actorBounds.center.set(next.x,1,next.z); g.visible=e.hp>0&&this.frustum.intersectsSphere(this.actorBounds);
+        if (!g.visible) return;
         if (g.userData.enemy) animateEnemy(g,t+e.x,move,dt,e); else animateHuman(g,t+e.x,move,e.running,dt,0,e.firing && e.hp > 0,e.reloading,e.reload_duration);
       });
     } else {
@@ -232,6 +267,7 @@ export class GameRenderer {
     this.renderer.domElement.dataset.renderCalls = this.renderer.info.render.calls;
     this.renderer.domElement.dataset.renderTriangles = this.renderer.info.render.triangles;
     this.renderer.domElement.dataset.frameMs = Math.round(elapsed);
+    if (this.mode === 'playing') this.loadNextChunk();
     this.frame = requestAnimationFrame(() => this.animate());
   }
   dispose() {

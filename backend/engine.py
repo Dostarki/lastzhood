@@ -11,6 +11,7 @@ from enemy_types import spawn_enemies
 from enemy_damage import update_statuses
 from boss_catalog import initial_bosses, boss_snapshot
 from bosses import update_bosses
+from network import ClientChannel
 
 
 class Game:
@@ -24,6 +25,9 @@ class Game:
         self.save_score = save_score
         self.counter = 0
         self.tasks = set()
+        self.tick_seq = 0
+        self.tick_ms = 0
+        self.tick_overruns = 0
 
     def persist(self, player):
         task = asyncio.create_task(self.save_score(dict(player)))
@@ -31,7 +35,7 @@ class Game:
         task.add_done_callback(self.tasks.discard)
 
     def add_player(self, session, ws):
-        player = {'id': uuid.uuid4().hex[:12], 'name': session['name'], 'weapon': session['weapon'], 'skin': session.get('skin', 'soldier'), 'ws': ws, 'lock': asyncio.Lock()}
+        player = {'id': uuid.uuid4().hex[:12], 'name': session['name'], 'weapon': session['weapon'], 'skin': session.get('skin', 'soldier'), 'ws': ws, 'channel': ClientChannel(ws)}
         self.reset(player)
         self.players[player['id']] = player
         self.spawn_zombies(player, 12)
@@ -46,7 +50,7 @@ class Game:
         p.update(x=x, z=z, angle=0, hp=100, ammo=WEAPONS[p['weapon']]['mag'], reserve=WEAPONS[p['weapon']]['reserve'], aim_distance=20, vx=0, vz=0,
                  score=0, kills=0, pvp=0, stamina=100, reload_until=0, last_shot=0, killer='',
                  protected_until=now+12, awaiting_input=True, input_time=now, born=now, died_at=0, last_spawn=now, trigger=False,
-                 statuses={}, controls={'x': 0, 'z': 0, 'fire': False, 'sprint': False})
+                 statuses={}, input_seq=0, ack_seq=0, controls={'x': 0, 'z': 0, 'fire': False, 'sprint': False})
 
     def respawn(self, p):
         old_id = p['id']
@@ -73,6 +77,9 @@ class Game:
         except (TypeError, ValueError, OverflowError):
             return
         length = max(1, math.hypot(x, z))
+        seq = data.get('seq', 0)
+        if isinstance(seq, int) and not isinstance(seq, bool) and 0 <= seq <= 9007199254740991:
+            p['input_seq'] = max(p['input_seq'], seq)
         p['controls'] = {'x': x/length, 'z': z/length, 'fire': data.get('fire') is True, 'sprint': data.get('sprint') is True}
         p['angle'] = angle % math.tau
         if data.get('fire_pressed') is True and data.get('fire') is True:p['trigger']=True
@@ -94,12 +101,7 @@ class Game:
             p['reload_until'] = p['input_time']+w['reload']
 
     async def send(self, player, data):
-        try:
-            async with player['lock']:
-                await asyncio.wait_for(player['ws'].send_json(data), .3)
-        except Exception:
-            with __import__('contextlib').suppress(Exception):
-                await player['ws'].close()
+        player['channel'].control(data)
 
     def update(self, dt, now):
         living = [p for p in self.players.values() if p['hp'] > 0]
@@ -112,6 +114,7 @@ class Game:
             p['vx'],p['vz']=c['x']*speed,c['z']*speed
             p['stamina'] = max(0, min(100, p['stamina']+(-22 if running else 13)*dt))
             move(p, c['x']*speed*dt, c['z']*speed*dt)
+            p['ack_seq'] = p['input_seq']
             if p['reload_until'] and now >= p['reload_until']:
                 amount = min(WEAPONS[p['weapon']]['mag']-p['ammo'], p['reserve'])
                 p['ammo'] += amount
@@ -147,7 +150,7 @@ class Game:
             if picked or drop['expires'] < now:
                 self.drops.remove(drop)
 
-    def snapshot(self, p, now):
+    def snapshot(self, p, now, shared=None):
         def close(e):
             return (e['x']-p['x'])**2+(e['z']-p['z'])**2 < 85**2
         def compact(e, fields):
@@ -161,11 +164,15 @@ class Game:
             return result
         me = compact(p, ['id', 'name', 'weapon', 'skin', 'x', 'z', 'angle', 'hp', 'ammo', 'reserve', 'score', 'kills', 'pvp', 'stamina', 'killer','vx','vz'])
         me['interior']=interior_at(p['x'],p['z'])
+        me['input_seq'] = p['ack_seq']
         me['reload_duration'] = WEAPONS[p['weapon']]['reload']
         me['statuses'] = {kind: round(max(0, effect['until']-now), 1) for kind, effect in p.get('statuses', {}).items() if effect['until'] > now}
         me.update(reloading=max(0, p['reload_until']-now), protected=max(0, p['protected_until']-now), awaiting_input=p['awaiting_input'], survived=0 if p['awaiting_input'] else int((p['died_at'] or now)-p['born']))
+        if shared is None:
+            shared = self.shared_snapshot(now)
         return {'type': 'state', 'me': me, 'online': len(self.players),
-                'bosses': [boss_snapshot(b, now) for b in self.bosses.values()],
+                'seq': self.tick_seq, 'server_time': round(now*1000, 2), 'tick_ms': round(self.tick_ms, 2),
+                'bosses': shared['bosses'],
                 'boss_projectiles': [{k: e[k] for k in ['id', 'owner', 'kind', 'x', 'z', 'y', 'dx', 'dz']} for e in self.boss_projectiles if close(e)],
                 'boss_zones': [{k: e[k] for k in ['id', 'owner', 'x', 'z', 'r']} for e in self.boss_zones if close(e)],
                 'players': [actor(e) for e in self.players.values() if e['id'] != p['id'] and close(e)],
@@ -175,7 +182,12 @@ class Game:
                 'fires': [{**compact(e,['id','x','z','r']), 'ttl':round(e['until']-now,2)} for e in self.fires if close(e)],
                 'drops': [{k: e[k] for k in ('id', 'x', 'z')} for e in self.drops if close(e)],
                 'events': [e for e in self.events if 'x' not in e or close(e)],
-                'leaders': sorted([compact(e, ['id', 'name', 'score', 'kills', 'pvp']) for e in self.players.values()], key=lambda e: -e['score'])[:10]}
+                'leaders': shared['leaders']}
+
+    def shared_snapshot(self, now):
+        return {'bosses': [boss_snapshot(b, now) for b in self.bosses.values()],
+                'leaders': [{k: e[k] for k in ('id', 'name', 'score', 'kills', 'pvp')}
+                            for e in sorted(self.players.values(), key=lambda e: -e['score'])[:10]]}
 
     async def run(self):
         previous = time.monotonic()
@@ -185,7 +197,10 @@ class Game:
             try:
                 self.events = []
                 self.update(dt, now)
-                await asyncio.gather(*(self.send(p, self.snapshot(p, now)) for p in list(self.players.values())))
+                self.tick_seq += 1
+                shared = self.shared_snapshot(now)
+                for p in list(self.players.values()):
+                    p['channel'].offer(self.snapshot(p, now, shared))
                 if not self.players:
                     self.zombies.clear()
                     self.drops.clear()
@@ -194,4 +209,7 @@ class Game:
                     self.swarms.clear()
             except Exception:
                 logging.exception('World tick failed')
+            self.tick_ms = (time.monotonic()-now)*1000
+            if self.tick_ms > 50:
+                self.tick_overruns += 1
             await asyncio.sleep(max(.001, .05-(time.monotonic()-now)))

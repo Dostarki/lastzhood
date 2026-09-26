@@ -56,7 +56,7 @@ function GameApp() {
     window.addEventListener('keydown', handler); return () => window.removeEventListener('keydown', handler);
   }, [navigate, panel, inGame,bossMapOpen]);
   const setGraphics = value => {
-    setQuality(value); if (engine.current) { engine.current.autoQuality = value === 'auto'; engine.current.slowFrames = 0; engine.current.renderer.setPixelRatio(value === 'high' ? Math.min(window.devicePixelRatio, 1.5) : value === 'auto' ? Math.min(window.devicePixelRatio, 1.25) : .65); engine.current.renderer.shadowMap.enabled = value !== 'low'; engine.current.resize(); }
+    setQuality(value); if (engine.current) { engine.current.autoQuality = value === 'auto'; engine.current.qualityLevel = 0; engine.current.qualitySince = performance.now(); engine.current.frameAverage = 16; engine.current.renderer.setPixelRatio(value === 'high' ? Math.min(window.devicePixelRatio, 1.5) : value === 'auto' ? Math.min(window.devicePixelRatio, 1.25) : .65); engine.current.renderer.shadowMap.enabled = value !== 'low'; engine.current.resize(); }
   };
   const fullScreen = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { setWorldError('Tam ekran bu tarayıcıda kullanılamıyor.'); } };
   return <main className={`deadzone-app ${inGame ? 'is-playing' : 'is-lobby'}`} data-testid="deadzone-app">
