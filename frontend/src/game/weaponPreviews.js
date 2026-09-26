@@ -7,7 +7,7 @@ export function getWeaponPreviews() {
   if (cache) return cache;
   cache = {};
   try {
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true }); renderer.setSize(1440, 600); renderer.setPixelRatio(1);
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true }); renderer.setSize(640, 267); renderer.setPixelRatio(1);
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .95;
     const scene = new THREE.Scene();
     const pmrem = new THREE.PMREMGenerator(renderer); const room = new RoomEnvironment(); const environment = pmrem.fromScene(room, .035);
@@ -17,7 +17,7 @@ export function getWeaponPreviews() {
     const rim = new THREE.DirectionalLight('#c2d7e4', 2.1); rim.position.set(1, 1, -3); scene.add(rim);
     const camera = new THREE.OrthographicCamera(-1.38, 1.38, .575, -.575, .1, 20); camera.position.set(.18, .42, 6); camera.lookAt(0, -.16, 0);
     WEAPONS.map(w=>w.id).forEach(type => {
-      const weapon = createWeapon(type); weapon.rotation.y = Math.PI/2; scene.add(weapon); renderer.render(scene, camera); cache[type] = renderer.domElement.toDataURL('image/png'); scene.remove(weapon);
+      const weapon = createWeapon(type); weapon.rotation.y = Math.PI/2; if(type==='glock18')weapon.scale.setScalar(1.6); scene.add(weapon); renderer.render(scene, camera); cache[type] = renderer.domElement.toDataURL('image/png'); scene.remove(weapon);
     });
     environment.dispose(); room.dispose(); pmrem.dispose(); renderer.dispose(); renderer.forceContextLoss();
   } catch (e) { console.error('Weapon previews could not render', e); cache = {}; }

@@ -19,6 +19,10 @@ from world import WORLD, WEAPONS
 from engine import Game
 from skins import SkinId
 from boss_catalog import boss_snapshot
+from admin_auth import setup_admin
+from admin_routes import create_admin_router
+from game_settings import GameSettings, apply_settings
+from inventory import equip_weapon
 
 load_dotenv(Path(__file__).parent / '.env')
 client = AsyncIOMotorClient(os.environ['MONGO_URL'])
@@ -29,7 +33,7 @@ pending = {}
 
 
 async def save_score(player):
-    if player['score'] <= 0:
+    if player['score'] <= 0 or player.get('bot'):
         return
     doc = {k: player[k] for k in ('id', 'name', 'weapon', 'score', 'kills', 'pvp')}
     doc['ended_at'] = datetime.now(timezone.utc).isoformat()
@@ -45,24 +49,29 @@ game = Game(save_score)
 @asynccontextmanager
 async def lifespan(app):
     await db.scores.create_index([('score', -1)])
+    await setup_admin(db)
+    saved = await db.game_settings.find_one({'id': 'world'}, {'_id': 0})
+    if saved:
+        apply_settings(game, GameSettings.model_validate(saved['settings']).model_dump())
     task = asyncio.create_task(game.run())
     yield
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await task
-    await asyncio.gather(*(p['channel'].stop() for p in list(game.players.values())))
+    await asyncio.gather(*(p['channel'].stop() for p in list(game.players.values()) if not p.get('bot')))
     await asyncio.gather(*(save_score(p) for p in list(game.players.values())))
     client.close()
 
 
 app = FastAPI(lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=os.environ['CORS_ORIGINS'].split(','), allow_methods=['*'], allow_headers=['*'])
+app.add_middleware(CORSMiddleware, allow_origins=os.environ['CORS_ORIGINS'].split(','), allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.include_router(create_admin_router(db, game))
 
 
 class JoinRequest(BaseModel):
     name: str = Field(min_length=2, max_length=18, pattern=r'^[\w .-]+$')
-    weapon: str
+    weapon: str = 'glock18'
     skin: SkinId = 'soldier'
 
 
@@ -85,7 +94,7 @@ async def root():
 async def status():
     return {'online': len(game.players), 'capacity': 200, 'friendly_fire': True, 'map': 'Westfall', 'size': 1600, 'tick_rate': 20,
             'tick_ms': round(game.tick_ms, 2), 'tick_overruns': game.tick_overruns,
-            'coalesced_states': sum(p['channel'].coalesced for p in game.players.values())}
+            'coalesced_states': sum(p['channel'].coalesced for p in game.players.values() if not p.get('bot'))}
 
 
 @app.get('/api/bosses')
@@ -114,25 +123,28 @@ async def join(body: JoinRequest):
     for key in list(pending):
         if pending[key]['expires'] < now:
             pending.pop(key, None)
-    if len(game.players) >= 200 or len(pending) >= 600:
+    if sum(not p.get('bot') for p in game.players.values()) >= 200 or len(pending) >= 600:
         raise HTTPException(409, 'Sunucu dolu. Lütfen biraz sonra tekrar dene.')
     if body.weapon not in WEAPONS:
         raise HTTPException(422, 'Geçersiz silah.')
     if len(body.name.strip()) < 2:
         raise HTTPException(422, 'Çağrı adı en az 2 karakter olmalı.')
     token = secrets.token_urlsafe(24)
-    pending[token] = {'name': body.name.strip(), 'weapon': body.weapon, 'skin': body.skin, 'expires': now + 60}
+    pending[token] = {'name': body.name.strip(), 'weapon': 'glock18', 'skin': body.skin, 'expires': now + 60}
     return {'token': token}
 
 
 @app.websocket('/api/ws/{token}')
 async def websocket(ws: WebSocket, token: str):
     session = pending.pop(token, None)
-    if not session or session['expires'] < time.monotonic() or len(game.players) >= 200:
+    if not session or session['expires'] < time.monotonic() or sum(not p.get('bot') for p in game.players.values()) >= 200:
         await ws.close(code=1008)
         return
     await ws.accept()
-    player = game.add_player(session, ws)
+    player = await game.admit_player(session, ws)
+    if player is None:
+        await ws.close(code=1013, reason='Sunucu dolu.')
+        return
     try:
         await ws.send_json({'type': 'welcome', 'id': player['id']})
         player['channel'].start()
@@ -144,9 +156,13 @@ async def websocket(ws: WebSocket, token: str):
                 await game.send(player, {'type': 'pong', 'time': data.get('time')})
             elif data.get('type') == 'input':
                 game.set_input(player, data)
+            elif data.get('type') == 'equip':
+                if not equip_weapon(player, data.get('weapon')):
+                    await game.send(player, {'type': 'action_error', 'message': 'Silah değiştirilemedi. Biraz sonra tekrar dene.'})
             elif data.get('type') == 'respawn' and player['hp'] <= 0:
-                await save_score(player)
-                game.respawn(player)
+                if time.monotonic()-player['died_at'] >= 10:
+                    await save_score(player)
+                    game.respawn(player)
     except (WebSocketDisconnect, RuntimeError, ValueError):
         pass
     finally:

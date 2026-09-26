@@ -12,6 +12,10 @@ from enemy_damage import update_statuses
 from boss_catalog import initial_bosses, boss_snapshot
 from bosses import update_bosses
 from network import ClientChannel
+from game_settings import GameSettings
+from inventory import new_inventory, inventory_snapshot
+from spawning import spawn_position
+from bots import update_bots, remove_bot
 
 
 class Game:
@@ -28,14 +32,33 @@ class Game:
         self.tick_seq = 0
         self.tick_ms = 0
         self.tick_overruns = 0
+        self.settings = GameSettings().model_dump()
+        self.zombie_factor = 1
+        self.admission_lock = asyncio.Lock()
 
     def persist(self, player):
+        if player.get('bot'):
+            return
         task = asyncio.create_task(self.save_score(dict(player)))
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
 
-    def add_player(self, session, ws):
-        player = {'id': uuid.uuid4().hex[:12], 'name': session['name'], 'weapon': session['weapon'], 'skin': session.get('skin', 'soldier'), 'ws': ws, 'channel': ClientChannel(ws)}
+    async def admit_player(self, session, ws):
+        # Called AFTER websocket acceptance: concurrent handshakes cannot overbook.
+        async with self.admission_lock:
+            if sum(not p.get('bot') for p in self.players.values()) >= 200:
+                return None
+            if len(self.players) >= 200:
+                victim = next((p for p in self.players.values() if p.get('bot')), None)
+                if victim is None:
+                    return None
+                remove_bot(self, victim)
+            return self.add_player(session, ws)
+
+    def add_player(self, session, ws, bot=False):
+        player = {'id': uuid.uuid4().hex[:12], 'name': session['name'], 'weapon': 'glock18', 'skin': session.get('skin', 'soldier'), 'ws': ws, 'bot': bot}
+        if not bot:
+            player['channel'] = ClientChannel(ws)
         self.reset(player)
         self.players[player['id']] = player
         self.spawn_zombies(player, 12)
@@ -43,31 +66,31 @@ class Game:
 
     def reset(self, p):
         now = time.monotonic()
-        # Distribute newcomers across safe road intersections, keeping early players nearby.
-        slot = len(self.players) // 8
-        x = (slot % 5)*80 + random.uniform(-4, 4)
-        z = (slot // 5)*80 + random.uniform(-4, 4)
+        x, z = spawn_position(self)
+        p['weapon'] = 'glock18'
+        p['inventory'] = new_inventory()
+        p['weapon_ready_at'] = 0
+        for key in ('path', 'next_path', 'roam_until', 'roam_x', 'roam_z'):
+            p.pop(key, None)
         p.update(x=x, z=z, angle=0, hp=100, ammo=WEAPONS[p['weapon']]['mag'], reserve=WEAPONS[p['weapon']]['reserve'], aim_distance=20, vx=0, vz=0,
                  score=0, kills=0, pvp=0, stamina=100, reload_until=0, last_shot=0, killer='',
                  protected_until=now+12, awaiting_input=True, input_time=now, born=now, died_at=0, last_spawn=now, trigger=False,
                  statuses={}, input_seq=0, ack_seq=0, controls={'x': 0, 'z': 0, 'fire': False, 'sprint': False})
 
     def respawn(self, p):
+        if p['hp'] > 0 or time.monotonic()-p['died_at'] < 10:
+            return False
         old_id = p['id']
         p['id'] = uuid.uuid4().hex[:12]
         self.players.pop(old_id, None)
         self.reset(p)
-        # Respawn away from the swarm that killed the player, not inside it.
-        for ox, oz in [(0, 0), (80, 0), (-80, 0), (0, 80), (0, -80), (80, 80)]:
-            x, z = p['x']+ox, p['z']+oz
-            if free(x, z) and all(math.hypot(e['x']-x, e['z']-z) > 18 for e in self.zombies.values()):
-                p['x'], p['z'] = x, z
-                break
         self.players[p['id']] = p
         self.spawn_zombies(p, 8)
+        return True
 
     def spawn_zombies(self, p, count):
-        spawn_enemies(self, p, count)
+        if self.zombie_factor:
+            spawn_enemies(self, p, max(1, round(count*self.zombie_factor)))
 
     def set_input(self, p, data):
         try:
@@ -104,6 +127,7 @@ class Game:
         player['channel'].control(data)
 
     def update(self, dt, now):
+        update_bots(self, now)
         living = [p for p in self.players.values() if p['hp'] > 0]
         for p in living:
             if p['awaiting_input']:
@@ -123,9 +147,9 @@ class Game:
             if c['fire'] or p['trigger']:
                 shoot(self, p, now)
                 p['trigger']=False
-            if not p['awaiting_input'] and now-p['last_spawn'] > 35:
+            if self.zombie_factor and not p['awaiting_input'] and now-p['last_spawn'] > 35/self.zombie_factor:
                 nearby = sum((z['x']-p['x'])**2+(z['z']-p['z'])**2 < 3600 for z in self.zombies.values())
-                if nearby < 14:
+                if nearby < 14*self.zombie_factor:
                     self.spawn_zombies(p, 4)
                 p['last_spawn'] = now
             # Roadside resupply stations replenish ammo/health once per minute per player.
@@ -165,13 +189,15 @@ class Game:
         me = compact(p, ['id', 'name', 'weapon', 'skin', 'x', 'z', 'angle', 'hp', 'ammo', 'reserve', 'score', 'kills', 'pvp', 'stamina', 'killer','vx','vz'])
         me['interior']=interior_at(p['x'],p['z'])
         me['input_seq'] = p['ack_seq']
+        me['inventory'] = inventory_snapshot(p)
+        me['respawn_in'] = round(max(0, 10-(now-p['died_at'])), 2) if p['hp'] <= 0 else 0
         me['reload_duration'] = WEAPONS[p['weapon']]['reload']
         me['statuses'] = {kind: round(max(0, effect['until']-now), 1) for kind, effect in p.get('statuses', {}).items() if effect['until'] > now}
         me.update(reloading=max(0, p['reload_until']-now), protected=max(0, p['protected_until']-now), awaiting_input=p['awaiting_input'], survived=0 if p['awaiting_input'] else int((p['died_at'] or now)-p['born']))
         if shared is None:
             shared = self.shared_snapshot(now)
         return {'type': 'state', 'me': me, 'online': len(self.players),
-                'seq': self.tick_seq, 'server_time': round(now*1000, 2), 'tick_ms': round(self.tick_ms, 2),
+                'seq': self.tick_seq, 'server_time': round(now*1000, 2), 'tick_ms': round(self.tick_ms, 2), 'time_of_day': self.settings['time_of_day'],
                 'bosses': shared['bosses'],
                 'boss_projectiles': [{k: e[k] for k in ['id', 'owner', 'kind', 'x', 'z', 'y', 'dx', 'dz']} for e in self.boss_projectiles if close(e)],
                 'boss_zones': [{k: e[k] for k in ['id', 'owner', 'x', 'z', 'r']} for e in self.boss_zones if close(e)],
@@ -200,7 +226,8 @@ class Game:
                 self.tick_seq += 1
                 shared = self.shared_snapshot(now)
                 for p in list(self.players.values()):
-                    p['channel'].offer(self.snapshot(p, now, shared))
+                    if not p.get('bot'):
+                        p['channel'].offer(self.snapshot(p, now, shared))
                 if not self.players:
                     self.zombies.clear()
                     self.drops.clear()

@@ -140,3 +140,54 @@ Bir zombi project oyunu istiyorum. Webde çalışacak grafikleri ise görselde a
 - P1: Gerçek kullanıcı rotasında daha uzun RTT/jitter ve cihaz FPS ölçümü; 200 aktif oyuncu ve kalabalık düşman/çatışma yükü, olası mekânsal indeksleme. Kapasite/FPS/RTT garantisi verme.
 - P1: İhtiyaç halinde tam input replay / lag compensation; mevcut sürüm sınırlı tahmin ve yumuşatma uygular.
 - P2: İsteğe bağlı son 30 saniye bağlantı/FPS grafiği ve kopyalanabilir teşhis özeti; model/ses ve denge backlog'u korunur.
+
+## Güncel çalışma — 2026-09-26: Envanter, yönetim paneli ve silahlı botlar
+### Kullanıcının isteği / onayları
+- "Silah seçim ekranı olmasın oyunda PCden I tuşu ile envanteri açıp silah seçebilelim bütün silahlar olsun envanterde."
+- Admin panelinde dört boss için ayrı aktif/pasif, gece/gündüz, zombi sıklığı, oyuncu gibi davranan silahlı botlar; yabancı nickler karakter üstünde; botlar online sayısına dahil. Admin panelinde insan/bot ayrımı ve toplam 200 katılımcı sınırı kullanıcı tarafından onaylandı.
+- "Oyuna tabanca ile başlanılsın. Clock 18 ile başlansın. Mobilde envanter düğmesi olsun evet" → silahın adı Glock 18 olarak uygulandı.
+- "admin panel şifresi olsun. şimdilik 123123" → yalnız şifreli admin; e-posta/kayıt/Google akışı eklenmedi.
+- "Ağır silahların hasarları 1.5 kat artsın. Öldüğümüzde yeniden doğ olayı 10 saniye olsun. Herkes random bir yerde başlasın."
+- Ağır silah kapsamı kullanıcıya bildirildi: RPG-7, M134, ALEV-21, LAV-6. Normal tüfek/AA-12 dengesi değişmedi.
+
+### Uygulanan oyun akışı
+- Giriş ekranında yalnız nick, altı karakter ve karakter önizlemesi var; silah seçim kartları/stats kaldırıldı. Her insan ve bot yeni hayata Glock 18 ile başlar; `/api/join` eski weapon alanıyla çağrılsa bile başlangıç sunucuda Glock'a zorlanır.
+- Yeni Glock 18 modeli (sürgü, kabza, tetik koruması, namlu, şarjör), elde tutma/reload/muzzle konumu; 18 hasar, 17 şarjör, 102 yedek, 38 m menzil, 1.5 sn reload. Glock sesinde mevcut lisanslı M4 örneği pitch ile kullanıldı; yeni özgün Glock kaydı iddia edilmez.
+- I tuşu ile 10 silahlı envanter, mobil sırt çantası düğmesi. Her silahın 3D önizlemesi, hasarı/menzili, şarjör/yedeği ve kuşanılmış durumu var. Envanter açıkken hareket/ateş engellenir. I ve Escape kapanışı masaüstü/mobil doğrulandı; Radix/window Escape çakışması capture+stopPropagation ile giderildi.
+- Sunucu WS `equip` mesajı, silah başına gerçek mermi/yedek saklama, 300 ms kuşanma aralığı; ölüyken/geçersiz silahla geçiş reddi. Değişim reload'u iptal eder ama mermi üretmez. Yerel ve uzak silah modelleri state'e göre güncellenir.
+- Ağır hasarlar: RPG-7 220→330 (patlama dahil); M134 16→24; ALEV-21 9→13.5; LAV-6 45→67.5 (patlama dahil), yerdeki lav vuruşu 8→12.
+- İnsanlarda ölüm sonrası yeniden doğ butonu 10 sn geri sayımda kapalı, sunucu erken talepleri reddeder; sonra oyuncu butonla doğar. Botlar 10 sn sonra otomatik doğar. Her yeni yaşamda yeni id, Glock ve tam envanter.
+- Her ilk giriş/yeniden doğmada haritanın geneline dağılmış güvenli rastgele yol konumu. 19×19 kavşak havuzu + sürekli rastgele koordinat sapması; engeller, diğer canlı oyunculara 10 m, zombilere 20 m, bosslara 65 m mesafe kontrolü; aşırı dolulukta sonlu güvenli fizik konumu fallback'i ve hazırlık koruması.
+- İnsan ve bot karakterlerinde aynı tip nick sprite'ları; yabancı kurgu bot nickleri İngilizce takma ad parçalarından üretilir, mevcut isimlerle çakışmaz. Public actor payload'ında bot işareti yok; admin gerçek ayrımı görür. Botların gerçek insan olduğu iddia edilmez, oyun katılımcılarıdır.
+
+### Yönetim paneli / kalıcılık / erişim
+- Yeni `/admin` sayfasına açılış ekranı ve karakter ekranından erişilir. Şifre kullanıcının seçtiği geçici `123123`; ayrıntı `/memory/test_credentials.md`. Bu zayıf geçici şifre gerçek kullanım öncesi değiştirilmelidir.
+- Dört boss ayrı açılıp kapatılır; kapatılan bossun kendisi, mermileri, zemin alanları ve verdiği durum etkileri temizlenir. Diğer bosslar değişmez. Yeniden açılınca boss yeniden oluşturulur.
+- Gündüz/gece tüm mevcut oyuncuların state'ine yansır; ortam ışığı, güneş/ay rengi, sis ve pozlama güncellenir. Zombi yoğunluğu kapalı/az/normal/yoğun; hem hedef nüfus hem yeniden oluşma aralığı değişir. Kapalıda zombiler, sürüler, zehir/kanama temizlenir; 600 zombi üst sınırı korunur.
+- Bot hedef sayısı 0–200. Yeni botlar 250 ms'de en çok ikişer eklenir, azaltma anında; admin hedef/gerçek sayı, insan/bot/zombi/tur süresi ve canlı oyuncu listesi görür. Toplam insan+bot 200'ü aşmaz; tam sunucuda gerçek oyuncuya yer açmak için bir bot kaldırılır. WebSocket kabulü SONRASI kilit içinde yeniden kapasite kontrolü+bot tahliyesi+oyuncu ekleme ile eşzamanlı giriş yarışı giderildi.
+- Botlar aynı fizik, silah, şarjör, reload, hasar, öldürme ve ölme kurallarını kullanır; dolaşma, hedef seçme, siper/engel çevresinde yol bulma, strafing, ateş ve 10 sn doğma. Karar döngüsü yaklaşık 140–240 ms, yakın hedef için 64 m grid, mevcut pathfinding kullanımı. Botlar sunucuda gerçek oyuncu aktörüdür, sahte API/online sayısı değildir. Botlar için WebSocket yazıcısı/snapshot üretilmez, kalıcı skor tablosuna bot skoru yazılmaz.
+- Mongo `game_settings`: id=world, settings, updated_at; uygulama başlangıcında okunur. Ayarlar bosslar, time_of_day, zombie_density, bot_count olarak saklanır. Test sonunda tüm bosslar aktif / gündüz / normal zombi / 0 bot başlangıcına geri getirildi.
+- Kimlik doğrulama rehberi kullanıldı; bcrypt hash ve JWT anahtarı yalnız backend .env; idempotent operator seed. Admin access 15 dk, refresh 7 gün; HttpOnly+Secure çerezler, Mongo oturum doğrulaması/TTL ve logout'ta sunucu iptali. Origin eksik/yabancı mutasyonlar 403. Tek operator için 5 yanlış giriş sonrası 15 dk kilit + Retry-After; değişen proxy IP'leri limit atlatamaz.
+- Önizleme ağ geçidi geçerli dış Origin'i farklı dahili önizleme adresine çevirir. Yalnız doğrulanmış iki adres `.env` ADMIN_ORIGIN/ADMIN_PROXY_ORIGIN ve açık CORS listesinde; wildcard yok. Kötü Origin'in değişmeden geldiği ve reddedildiği curl ile doğrulandı.
+- Uygulama Strict cookie üretir, dış gateway'in admin çerezlerini **SameSite=None; Partitioned** olarak çevirdiği isim bazında public curl ile doğrulandı. Secure/HttpOnly/Path ve mandatory Origin kontrolü korunur; CSRF koruması edge SameSite davranışına bağımlı değildir. Cookie davranışı ve test koşulları `/auth_testing.md` içinde.
+- Yeni API: `/api/admin/login`, `/me`, `/refresh`, `/logout`, GET/PUT `/settings`, GET `/status`. Pydantic yanıt modelleri; Mongo `_id` hiçbir yanıtta yok. Ayar/hareket/bot/kimlik API'lerinde MOCKED akış yok. Kontrollü birim testlerde fixture/mock kullanımı ürün entegrasyonu değildir.
+
+### Yeni/önemli dosyalar
+- Backend: `admin_auth.py`, `admin_routes.py`, `game_settings.py`, `inventory.py`, `spawning.py`, `bots.py`; `engine.py`, `server.py`, `world.py`, `combat.py` değişti.
+- Frontend: `components/AdminPage.jsx/.css`, `AdminWorldSettings.jsx`, `AdminBots.jsx`, `Inventory.jsx/.css`, `DeathPanel.jsx`, `lib/adminApi.js`, `game/nameLabels.js`; App/Lobby/HUD/renderer/network.worker/useSession/config/weapons/pose/audio/preview dosyaları değişti.
+- Mevcut React + Three.js/Cannon + FastAPI/Pymunk + Mongo mimarisi korundu. Yeni ücretli servis, LLM veya bağımlılık eklenmedi; mevcut bcrypt/PyJWT kullanıldı.
+
+### Doğrulama / testte bulunanların sonucu
+- `/test_reports/iteration_5.json` bulguları incelendi. Origin-proxy ve envanter Escape sorunu düzeltildi. Limit anahtarı proxy IP'den tek operator'a taşındı. Testteki `.env` tırnaklarını URI'ye dahil eden ayrıştırma `dotenv_values` ile düzeltildi; test kilitleri yalnız ilgili hesaptan finally bloğunda silinir, public reset endpoint'i yok.
+- Mermi kaybı raporu uygulama hatası değildi: test ateşi durdurmadan eski state'e bakıyordu. `fire=False` + input_seq onayından sonra ölçümle cephane korunumu geçti. Cookie'nin dış None/Partitioned olması platform davranışı, yukarıdaki korumalarla doğrulandı; Strict dışarıya yansıyor diye raporlanmadı.
+- `/test_reports/iteration_6.json`: admin login, 4 boss, gece/gündüz, 4 yoğunluk, 3→0 bot, liste ve logout gerçek tarayıcıda geçti; 1920×800 ve 390×844 taşma/çakışma yok. Envanter masaüstü/mobil 10 önizleme dolu, I/Escape/yeniden açma doğrulandı. Oyun canvas'ı görünür; düşük headless FPS gerçek cihaz garantisi değildir.
+- Son ek regresyon: 199 insan (+isteğe bağlı 1 bot) ve aynı anda iki kabulde yalnız biri alınır, toplam 200 kalır. Gerçek bot beyni hareket/nişan/ateş/mermi/hasar pipeline'ı geçti. 200 üretilmiş nick benzersiz, 400 rastgele konum örneği harita geneline yayılmış ve fiziksel olarak boş.
+- Test raporundaki "400 aday kavşak" ve "foreign fiction" ek yorumları gerçek kullanıcı gereksinimi değildir: kullanıcı aday sayısı veya belirli kurgu eser isimleri istemedi. Mevcut 361 kavşak + koordinat sapması ve İngilizce kurgu nickleri korunup özellikleri test edildi.
+- **Son birleşik sonuç: 27/27 backend testi geçti**, worker/SnapshotTrack/MovementController testleri geçti, `yarn build` başarılı, yeni backend ERROR/Traceback yok. Eski ağ testindeki AK-117 başlangıç beklentisi yeni Glock + 10 sn kuralına uyarlandı.
+- Raporlar: `/test_reports/admin-inventory-final.xml`, `/test_reports/iteration6-final-unit.xml`, `/test_reports/inventory-admin-build.log`, `/test_reports/admin-final-server.log`. Testler global ayar/tek admin nedeniyle seri çalıştırılır (`pytest -o addopts=''`).
+
+### Güncel sonraki işler
+- P0: Uygulama/test kapsamında bilinen engelleyici sorun yok. Kullanıcının envanter, bot davranışı ve yönetim ayarlarını kendi cihazından doğrulaması bekleniyor.
+- P1: Geçici yönetici şifresini kullanıcıyla güçlü bir şifreye değiştirme; 200 aktif insan/bot + yoğun çatışma yükünde kapasite/FPS/RTT testi. Sert 200 sınırı test edildi, 200 gerçek aktif katılımcı performansı GARANTİ EDİLMEDİ.
+- P1: Önceki kullanıcıya özgü sürekli 300 ms sorununun gerçek ağ/cihaz ölçümleri bekleniyor; bu özellikler sırasında çözüldüğü iddia edilmez.
+- P2 / öneri: Bot zorluğu/nişan hassasiyeti ayarı; isteğe bağlı performans grafiği, model/ses/oyun dengesi backlog'u korunur.

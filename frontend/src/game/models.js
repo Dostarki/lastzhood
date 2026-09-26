@@ -48,7 +48,7 @@ export function createHuman(zombie = false, variant = 0, weaponType = 'ak47', sk
     dressCharacter(body, head, legs, knees, style);
     const gun = createWeapon(weaponType); gun.scale.setScalar(.64); body.add(gun);
     const flash = new THREE.Mesh(new THREE.ConeGeometry(.11, .34, 5), new THREE.MeshBasicMaterial({ color: '#ffe4a1', transparent: true, opacity: .9, depthWrite: false }));
-    flash.rotation.x = Math.PI/2; flash.position.z = 1.34; flash.visible = false; gun.add(flash);
+    flash.rotation.x = Math.PI/2; flash.position.z = weaponType==='glock18'?.46:1.34; flash.visible = false; gun.add(flash);
     g.userData.gun = gun; g.userData.muzzleFlash = flash; g.userData.armRigs = makeArms(body, style, weaponType);
   }
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(.65, 20), new THREE.MeshBasicMaterial({ color: '#0c140b', transparent: true, opacity: .3, depthWrite: false }));

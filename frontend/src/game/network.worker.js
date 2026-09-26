@@ -58,7 +58,7 @@ self.onmessage = ({ data }) => {
         self.postMessage({ type: 'ping', value: Math.round(value), jitter: Math.round(jitter) });
       } else if (m.type !== 'pong') self.postMessage(m);
     };
-    socket.onclose = () => { stop(); self.postMessage({ type: 'close' }); };
+    socket.onclose = event => { stop(); self.postMessage({ type: 'close', code: event?.code }); };
     socket.onerror = () => self.postMessage({ type: 'error' });
   } else if (data.type === 'state-consumed') {
     inFlight = false; publish();
@@ -68,6 +68,9 @@ self.onmessage = ({ data }) => {
     controls = { ...data, reload: !!data.reload || controls.reload };
     lastInput = performance.now();
     if (edge || lastInput - lastSent >= 50) sendInput();
+  } else if (data.type === 'equip') {
+    pendingPress = false; controls = { ...controls, fire: false, reload: false };
+    if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'equip', weapon: data.weapon }));
   } else if (data.type === 'respawn') {
     if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'respawn' }));
   } else if (data.type === 'disconnect') {

@@ -44,9 +44,9 @@ def explode(game,projectile,now):
     owner = game.players.get(projectile['owner'])
     if projectile['kind'] == 'lava':
         game.fires.append({'id':projectile['id'],'x':x,'z':z,'r':3.8,'until':now+8,'owner':projectile['owner'],'last_damage':0})
-        radius,damage = 2.8,45
+        radius,damage = 2.8,WEAPONS['lava']['damage']
     elif projectile['kind'] == 'enemy_fire': radius,damage = 6,90
-    else: radius,damage = 8,220
+    else: radius,damage = 8,WEAPONS['rocket']['damage']
     game.events.append({'type':'explosion','kind':projectile['kind'],'x':x,'z':z,'r':radius,'owner':projectile['owner']})
     for e in targets(game):
         distance = math.hypot(e['x']-x,e['z']-z)
@@ -79,12 +79,12 @@ def update_projectiles(game,dt,now):
         fire['last_damage']=now
         for e in targets(game):
             if math.hypot(e['x']-fire['x'],e['z']-fire['z'])<fire['r'] and wall_distance(fire['x'],fire['z'],e['x'],e['z'])>.95:
-                hurt(game,e,8,game.players.get(fire['owner']),now)
+                hurt(game,e,12,game.players.get(fire['owner']),now)
 
 
 def shoot(game,p,now):
     w = WEAPONS[p['weapon']]
-    if p['reload_until'] or p['ammo']<=0 or now-p['last_shot']<w['rate']-.005: return
+    if p['hp'] <= 0 or now < p.get('weapon_ready_at', 0) or p['reload_until'] or p['ammo']<=0 or now-p['last_shot']<w['rate']-.005: return
     p['last_shot']=now; p['ammo']-=1
     dx,dz=math.sin(p['angle']),math.cos(p['angle'])
     if w['kind'] in ('rocket','lava'):

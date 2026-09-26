@@ -4,6 +4,7 @@ import { applyReloadPose, RELOAD_DURATIONS } from './reloadAnimation';
 
 const Y = new THREE.Vector3(0, 1, 0);
 const grips = {
+  glock18: [[0, -.23, -.16], [-.075, -.21, -.10]],
   rifle: [[0, -.30, -.30], [-.035, -.075, .48]],
   rocket: [[0, -.25, -.08], [0, -.20, .40]],
   minigun: [[0, -.37, -.49], [0, .35, -.03]],

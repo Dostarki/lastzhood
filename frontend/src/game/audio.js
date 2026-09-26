@@ -22,6 +22,8 @@ class GameAudio{
     this.sync();const source=this.ctx.createBufferSource(),level=this.ctx.createGain(),stereo=this.ctx.createStereoPanner();source.buffer=this.buffers[type];source.playbackRate.value=rate;level.gain.value=gain;stereo.pan.value=Math.max(-1,Math.min(1,pan));source.connect(level);level.connect(stereo);stereo.connect(this.master);source.start();source.onended=()=>{source.disconnect();level.disconnect();stereo.disconnect();};return source;
   }
   shot(type='ak47',remote=false,distance=0,pan=0){
+    // Existing licensed firearm sample, pitched for the pistol; not a Glock recording.
+    if(type==='glock18'){this.play('m4',{gain:remote?Math.max(.04,1/(1+distance*.13)):.60,rate:1.22,pan});return;}
     if(!this.ctx||!this.buffers[type])return;
     if(!remote&&['minigun','flamethrower'].includes(type)){
       if(!this.loops.has(type)){this.sync();const s=this.ctx.createBufferSource(),g=this.ctx.createGain();s.buffer=this.buffers[type];s.loop=true;s.loopStart=.04;s.loopEnd=Math.max(.08,s.buffer.duration-.08);g.gain.value=type==='minigun'?.8:1.25;s.connect(g);g.connect(this.master);s.start();this.loops.set(type,{s,g});}

@@ -10,6 +10,7 @@ import { SwarmEffects } from './swarmEffects';
 import { RELOAD_DURATIONS } from './reloadAnimation';
 import { BossScene } from './bossScene';
 import { SnapshotTrack } from './snapshotTrack';
+import { nameLabel } from './nameLabels';
 
 export class GameRenderer {
   constructor(container, world, onError) {
@@ -32,7 +33,7 @@ export class GameRenderer {
     this.frustum = new THREE.Frustum(); this.viewMatrix = new THREE.Matrix4(); this.actorBounds = new THREE.Sphere(new THREE.Vector3(), 4);
     this.renderer.shadowMap.type = THREE.PCFShadowMap; this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.16;
     this.renderer.domElement.setAttribute('data-testid', 'game-canvas'); this.renderer.domElement.setAttribute('aria-label', 'Westfall üç boyutlu oyun alanı'); container.appendChild(this.renderer.domElement);
-    this.scene.add(new THREE.HemisphereLight('#e4ead6', '#4c5544', 2.05));
+    this.sky = new THREE.HemisphereLight('#e4ead6', '#4c5544', 2.05); this.scene.add(this.sky);
     this.sun = new THREE.DirectionalLight('#ffe4b5', 3.1); this.sun.position.set(-38, 70, 34); this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024); Object.assign(this.sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 180 });
     this.sun.shadow.bias = -.0004; this.sun.shadow.normalBias = .1; this.sun.shadow.autoUpdate = false; this.shadowTime = 0; this.scene.add(this.sun); this.scene.add(this.sun.target);
@@ -78,6 +79,7 @@ export class GameRenderer {
   }
   setMode(mode, weapon, skin = this.skin || 'soldier') {
     this.mode = mode; this.keys = {}; this.mouseDown = false;
+    this.timeOfDay = null;
     this.pendingState = null; this.pendingEvents = []; this.lastReceivedAt = null;
     this.metricStart = performance.now(); this.metricFrames = 0; this.qualitySince = performance.now();
     this.movement.intent = null; this.movement.intentSeq = 0;
@@ -120,9 +122,17 @@ export class GameRenderer {
   }
   syncState(state) {
     const previous=this.state?.me;
+    if (state.me.weapon !== this.weapon || state.me.skin !== this.skin) {
+      const position = this.player.position.clone(); disposeHuman(this.player);
+      this.weapon = state.me.weapon; this.skin = state.me.skin;
+      this.player = createHuman(false, 0, this.weapon, this.skin); this.player.position.copy(position); this.scene.add(this.player);
+      this.localPending = []; this.localReloadUntil = 0; this.nextShot = performance.now()+100; audio.stopAutomatic();
+    }
+    nameLabel(this.player, state.me.name, state.me.id);
+    this.setTimeOfDay(state.time_of_day || 'day');
     if(state.me.reloading>0&&!previous?.reloading&&performance.now()-(this.lastReloadSoundAt||0)>500){audio.reload();this.lastReloadSoundAt=performance.now();}
     if(previous?.reloading>0&&!state.me.reloading)this.localReloadUntil=0;
-    if(!previous||previous.id!==state.me.id||state.me.ammo>previous.ammo)this.localPending=[];
+    if(!previous||previous.id!==state.me.id||previous.weapon!==state.me.weapon||state.me.ammo>previous.ammo)this.localPending=[];
     else if(state.me.ammo<previous.ammo)this.localPending.splice(0,previous.ammo-state.me.ammo);
     this.localPending=this.localPending.filter(t=>performance.now()-t<1500);
     this.localAmmo=Math.max(0,state.me.ammo-this.localPending.length);
@@ -135,6 +145,7 @@ export class GameRenderer {
       if (g && !e.zombie && (g.userData.skin !== (e.skin || 'soldier') || g.userData.weaponType !== e.weapon)) { disposeHuman(g); g = null; }
       if (!g) { g = e.zombie ? createEnemy(e.enemy_type, e.variant || 0) : createHuman(false, 0, e.weapon, e.skin); g.position.set(e.x, 0, e.z); this.scene.add(g); this.entities.set(e.id, g); }
       g.userData.target = e; g.visible = e.hp > 0;
+      if (!e.zombie) nameLabel(g, e.name, e.id);
       g.userData.track ||= new SnapshotTrack();
       g.userData.track.push(e, state.server_time || this.lastSnapshotAt);
     });
@@ -142,6 +153,17 @@ export class GameRenderer {
     this.pendingEvents.forEach(event => { if (event.type === 'shot'&&event.owner!==state.me.id) { this.fx.shot(event); const actor = this.entities.get(event.owner); if (actor) triggerHumanShot(actor); } else if (event.type === 'kill') this.corpse(event); else if(event.type==='explosion')this.fx.explosion(event); else if(event.type==='enemy_attack' && this.entities.get(event.owner)?.visible) this.fx.shot(event); });
     this.pendingEvents.forEach(event=>this.bossScene.event(event));
     this.pendingEvents = [];
+    this.renderer.domElement.dataset.playerNameLabels = JSON.stringify([state.me.name,...state.players.map(p=>p.name)]);
+  }
+  setTimeOfDay(value) {
+    if (value === this.timeOfDay) return;
+    this.timeOfDay = value;
+    const night = value === 'night';
+    this.scene.background.set(night ? '#142232' : '#48564a'); this.scene.fog.color.copy(this.scene.background);
+    this.sky.color.set(night ? '#799dbd' : '#e4ead6'); this.sky.groundColor.set(night ? '#233529' : '#4c5544'); this.sky.intensity = night ? .85 : 2.05;
+    this.sun.color.set(night ? '#aac9e8' : '#ffe4b5'); this.sun.intensity = night ? .7 : 3.1;
+    this.renderer.toneMappingExposure = night ? .95 : 1.16;
+    this.renderer.domElement.dataset.timeOfDay = value;
   }
   shot(e) {
     const points = [new THREE.Vector3(e.x, 1.35, e.z), new THREE.Vector3(e.tx, .9, e.tz)];

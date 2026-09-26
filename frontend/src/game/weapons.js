@@ -163,6 +163,18 @@ function heavyWeapon(g,type,ammo){
     part(g,.08,.25,0,.28,.14,.16,steel);part(g,.08,.30,.087,.20,.033,.015,molten);
   }
 }
+function pistol(g,ammo){
+  part(g,.04,.055,0,.69,.14,.13,steel);part(g,.02,-.025,0,.64,.065,.13,polymer);
+  const grip=part(g,-.18,-.23,0,.18,.36,.125,polymer);grip.rotation.z=-.18;
+  part(ammo,-.15,-.41,0,.20,.035,.145,steel);
+  barrel(g,.32,.055,.028,.13,steel);
+  const bore=new THREE.Mesh(new THREE.CircleGeometry(.018,16),recess);bore.rotation.y=Math.PI/2;bore.position.set(.39,.055,0);g.add(bore);
+  part(g,.27,.147,0,.035,.03,.023,edge);part(g,-.25,.14,0,.045,.025,.12,edge);
+  for(const side of [-1,1])for(let i=0;i<6;i++)part(g,-.26+i*.023,.058,side*.071,.01,.10,.005,recess);
+  for(const z of [-.055,.055])wire(g,[[-.1,-.05,z],[-.1,-.2,z],[.12,-.2,z],[.14,-.05,z]],.012,polymer);
+  wire(g,[[0,-.05,0],[-.01,-.14,0],[.015,-.17,0]],.012,steel);
+  for(let i=0;i<5;i++)part(g,-.155,-.15-i*.045,.067,.10,.01,.007,recess);
+}
 function m4(g,ammo){
   receiver(g,false);gripAndTrigger(g);magazine(ammo,'ak117');
   barrel(g,-.74,.02,.047,.66,steel);
@@ -181,9 +193,10 @@ export function createWeapon(type = 'ak47') {
     const g = new THREE.Group(), ammo = new THREE.Group();
     if(['rocket','minigun','flamethrower','lava'].includes(type))heavyWeapon(g,type,ammo);
     else if(type==='m4')m4(g,ammo);
+    else if(type==='glock18')pistol(g,ammo);
     else { receiver(g, type === 'shotgun'); stock(g, type === 'ak117', type === 'shotgun'); magazine(ammo, type); gripAndTrigger(g); front(g, type); }
     const merged = consolidate(g); merged.rotation.y = -Math.PI/2;
-    const result = new THREE.Group(); result.add(merged); result.userData.muzzle = new THREE.Vector3(0, 0, 1.23);
+    const result = new THREE.Group(); result.add(merged); result.userData.muzzle = new THREE.Vector3(0, 0, type==='glock18'?.43:1.23);
     const reloadPart = consolidate(ammo); reloadPart.rotation.y = -Math.PI/2; reloadPart.name = 'reload-part'; result.add(reloadPart);
     cache.set(type, result);
   }

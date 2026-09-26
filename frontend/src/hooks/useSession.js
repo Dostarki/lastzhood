@@ -14,7 +14,7 @@ export function useSession(engineRef) {
     if (workerRef.current) { const old = workerRef.current; old.onmessage = null; old.postMessage({ type: 'disconnect' }); setTimeout(() => old.terminate(), 300); workerRef.current = null; }
   }, [engineRef]);
   const leave = useCallback(() => {
-    teardown(); setMode('lobby'); setState(null); engineRef.current?.setMode('lobby', 'ak47');
+    teardown(); setMode('lobby'); setState(null); engineRef.current?.setMode('lobby', 'glock18');
   }, [teardown, engineRef]);
   useEffect(() => teardown, [teardown]);
   const start = async (name, weapon, skin = 'soldier') => {
@@ -40,6 +40,7 @@ export function useSession(engineRef) {
           };
           engineRef.current.publishInput = send; send(); interval.current = setInterval(send, 50);
         } else if (message.type === 'ping') setPing(message.value);
+        else if (message.type === 'action_error') toast.error(message.message);
         else if (message.type === 'state') {
           engineRef.current?.receive(message);
           // HUD work stays at 10Hz; the renderer gets every available 20Hz state.
@@ -56,7 +57,7 @@ export function useSession(engineRef) {
           });
           worker.postMessage({ type: 'state-consumed' });
         } else if (message.type === 'close' || message.type === 'error') {
-          clearTimeout(timeout); teardown(); setError('Sunucu bağlantısı kesildi. Tekrar katılabilirsin.'); setMode('lobby'); setState(null); engineRef.current?.setMode('lobby', weapon, skin);
+          clearTimeout(timeout); teardown(); setError(message.code === 1013 ? 'Sunucu dolu. Biraz sonra tekrar dene.' : 'Sunucu bağlantısı kesildi. Tekrar katılabilirsin.'); setMode('lobby'); setState(null); engineRef.current?.setMode('lobby', weapon, skin);
         }
       };
       worker.onerror = () => { clearTimeout(timeout); teardown(); setError('Online bağlantı başlatılamadı. Lütfen tekrar dene.'); setMode('lobby'); };
@@ -64,5 +65,6 @@ export function useSession(engineRef) {
     } catch (e) { teardown(); setError(e.message); setMode('lobby'); }
   };
   const respawn = () => workerRef.current?.postMessage({ type: 'respawn' });
-  return { mode, state, ping, error, start, leave, respawn };
+  const equip = weapon => workerRef.current?.postMessage({ type: 'equip', weapon });
+  return { mode, state, ping, error, start, leave, respawn, equip };
 }

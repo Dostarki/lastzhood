@@ -35,6 +35,6 @@ export function disposeHuman(group) {
   if (flash) { flash.geometry.dispose(); flash.material.dispose(); flash.removeFromParent(); }
   const gun = group.userData.gun;
   if (gun) gun.removeFromParent();
-  group.traverse(o => { o.geometry?.dispose(); if (o.material?.transparent) o.material.dispose(); });
+  group.traverse(o => { if (!o.isSprite) o.geometry?.dispose(); if (o.userData.nameLabel) o.material?.map?.dispose(); if (o.material?.transparent) o.material.dispose(); });
   group.removeFromParent();
 }

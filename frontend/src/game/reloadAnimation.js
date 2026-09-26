@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export const RELOAD_DURATIONS = { ak47: 2.1, ak117: 1.8, ak107: 2, shotgun: 2.6, m4: 1.9, rocket: 2.8, minigun: 3.8, flamethrower: 3, lava: 2.5 };
+export const RELOAD_DURATIONS = { glock18: 1.5, ak47: 2.1, ak117: 1.8, ak107: 2, shotgun: 2.6, m4: 1.9, rocket: 2.8, minigun: 3.8, flamethrower: 3, lava: 2.5 };
 const smooth = (value, from, to) => THREE.MathUtils.smoothstep(value, from, to);
 const anchors = { rocket: [0,.04,1.0], minigun: [.10,-.36,-.32], flamethrower: [.12,0,-.33], lava: [.21,0,-.09] };
 

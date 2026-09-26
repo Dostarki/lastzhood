@@ -2,15 +2,16 @@ import random
 import pymunk
 
 WEAPONS = {
+    'glock18': {'name':'Glock 18','damage':18,'mag':17,'rate':.065,'range':38,'reload':1.5,'spread':.04,'pellets':1,'kind':'bullet','reserve':102},
     'ak47': {'name':'AK-47','damage':35,'mag':30,'rate':.10,'range':72,'reload':2.1,'spread':.018,'pellets':1,'kind':'bullet','reserve':180},
     'ak117': {'name':'AK-117','damage':26,'mag':35,'rate':.075,'range':62,'reload':1.8,'spread':.028,'pellets':1,'kind':'bullet','reserve':210},
     'ak107': {'name':'AK-107','damage':30,'mag':30,'rate':.09,'range':82,'reload':2,'spread':.009,'pellets':1,'kind':'bullet','reserve':180},
     'shotgun': {'name':'AA-12','damage':18,'mag':8,'rate':.3,'range':25,'reload':2.6,'spread':.17,'pellets':7,'kind':'bullet','reserve':64},
     'm4': {'name':'M4A1','damage':28,'mag':30,'rate':.085,'range':85,'reload':1.9,'spread':.012,'pellets':1,'kind':'bullet','reserve':180},
-    'rocket': {'name':'RPG-7','damage':220,'mag':1,'rate':1.1,'range':110,'reload':2.8,'spread':0,'pellets':1,'kind':'rocket','reserve':10},
-    'minigun': {'name':'M134','damage':16,'mag':150,'rate':.05,'range':75,'reload':3.8,'spread':.045,'pellets':1,'kind':'bullet','reserve':450},
-    'flamethrower': {'name':'ALEV-21','damage':9,'mag':100,'rate':.1,'range':9,'reload':3,'spread':.3,'pellets':1,'kind':'flame','reserve':300},
-    'lava': {'name':'LAV-6','damage':45,'mag':6,'rate':.65,'range':40,'reload':2.5,'spread':0,'pellets':1,'kind':'lava','reserve':36},
+    'rocket': {'name':'RPG-7','damage':330,'mag':1,'rate':1.1,'range':110,'reload':2.8,'spread':0,'pellets':1,'kind':'rocket','reserve':10},
+    'minigun': {'name':'M134','damage':24,'mag':150,'rate':.05,'range':75,'reload':3.8,'spread':.045,'pellets':1,'kind':'bullet','reserve':450},
+    'flamethrower': {'name':'ALEV-21','damage':13.5,'mag':100,'rate':.1,'range':9,'reload':3,'spread':.3,'pellets':1,'kind':'flame','reserve':300},
+    'lava': {'name':'LAV-6','damage':67.5,'mag':6,'rate':.65,'range':40,'reload':2.5,'spread':0,'pellets':1,'kind':'lava','reserve':36},
 }
 space = pymunk.Space()
 rng = random.Random(4178)

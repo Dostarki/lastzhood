@@ -1,0 +1,12 @@
+# Yönetici erişimi test planı
+- Bu oyunda yönetici girişi yalnız şifreyledir; e-posta veya kayıt akışı yoktur. Misafir oyun biletleri değişmedi.
+- Doğru şifre ve URL için `/app/memory/test_credentials.md` ve `/app/frontend/.env` kullanılır.
+- Mongo `admin_accounts`: tek `operator`, bcrypt `$2b$` hash; `admin_sessions` sid unique + expires_at TTL; `login_attempts` identifier unique + expires_at TTL.
+- POST `/api/admin/login` şifre; Origin backend ADMIN_ORIGIN veya doğrulanmış ADMIN_PROXY_ORIGIN olmalı. Önizleme ağ geçidi yalnız geçerli dış adresi dahili önizleme adresine çeviriyor; saldırgan Origin değişmeden geliyor ve 403 almalı. Wildcard kullanılmaz. Secure/HttpOnly/SameSite=Strict `admin_access` (15 dk), `admin_refresh` (7 gün), Path=/api/admin.
+- GET `/api/admin/me`, `/api/admin/settings`, `/api/admin/status`: yetkisiz 401. PUT ayarlarında ayrıca Origin zorunlu. Login/refresh/logout için de Origin kontrolü.
+- Geçersiz şifre 401, 5 denemeden sonra 429 + Retry-After. Tek yönetici hesabına ait `identifier: admin:operator` kaydı kullanılır; değişen proxy IP'leri veya X-Forwarded-For ile limit atlanmaz. Auth testlerini PARALEL çalıştırmayın (`pytest -o addopts=''`); yalnız bu testin hesabına ait limiti finally bloğunda Mongo'dan temizleyin. Public kilit sıfırlama uç noktası yoktur.
+- `.env` okurken `dotenv_values` kullanın; tırnakları URI içine dahil eden elle ayrıştırma Mongo bağlantısını bozar.
+- Uygulama Strict cookie üretir; dış önizleme ağ geçidi admin cookie'lerini `SameSite=None; Partitioned` şeklinde çevirebilir. Yalnız admin_access/admin_refresh çerezlerini ayrı doğrulayın. Her durumda Secure/HttpOnly/Path korunmalı, Origin'siz veya yabancı Origin'li tüm mutasyonlar 403 almalıdır; CSRF koruması edge SameSite davranışına bağlı değildir.
+- POST `/api/admin/refresh` oturum veritabanında aktifse access yeniler; logout hem çerezleri hem sunucu oturumunu iptal eder. Eski cookie logout sonrası işe yaramaz.
+- Ayarlar Mongo'da kalıcı; yeniden yükleme/startup ve iki istemcide dünya değişimleri doğrulanmalı.
+- Hiçbir API parola/hash/token/soket nesnesi veya Mongo ObjectId döndürmemeli.

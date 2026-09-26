@@ -141,11 +141,14 @@ def test_game_run_20hz_not_blocked_by_slow_socket_writer_and_respawn_contract():
         # Unit-level death/respawn validation when hp <= 0.
         old_id = p2["id"]
         p2["hp"] = 0
-        game.respawn(p2)
+        p2['died_at'] = time.monotonic()
+        assert game.respawn(p2) is False
+        p2['died_at'] -= 10.1
+        assert game.respawn(p2) is True
         assert p2["id"] != old_id
         assert p2["hp"] == 100
         assert p2["skin"] == "fbi"
-        assert p2["weapon"] == "ak117"
+        assert p2["weapon"] == "glock18"
 
         await asyncio.gather(*(player["channel"].stop() for player in list(game.players.values())))
 
